@@ -38,5 +38,39 @@ const getProveedores = async (req, res) => {
     res.status(500).json({ error: 'Error en el servidor' });
   }
 };
+const deleteProveedor = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
 
-module.exports = { createProveedores, getProveedores };
+  try {
+    const proveedor = await pool.query(
+      'SELECT * FROM proveedores WHERE id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    if (proveedor.rows.length === 0) {
+      return res.status(404).json({ error: 'Proveedor no encontrado' });
+    }
+
+    // Verificamos si el proveedor tiene compras asociadas
+    const enUso = await pool.query(
+      'SELECT * FROM compras WHERE proveedor_id = $1',
+      [id]
+    );
+
+    if (enUso.rows.length > 0) {
+      return res.status(400).json({
+        error: 'No se puede eliminar: este proveedor tiene compras registradas',
+      });
+    }
+
+    await pool.query('DELETE FROM proveedores WHERE id = $1', [id]);
+
+    res.json({ message: 'Proveedor eliminado correctamente' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al eliminar el proveedor' });
+  }
+};
+
+module.exports = { createProveedores, getProveedores, deleteProveedor };

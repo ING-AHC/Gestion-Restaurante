@@ -87,4 +87,26 @@ const asignarInsumos = async (req, res) => {
     client.release();
   }
 };
-module.exports = { createPlato, getPlatos, asignarInsumos };
+const deletePlato = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+
+  try {
+    const plato = await pool.query(
+      'SELECT * FROM platos WHERE id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    if (plato.rows.length === 0) {
+      return res.status(404).json({ error: 'Plato no encontrado' });
+    }
+
+    await pool.query('DELETE FROM platos WHERE id = $1', [id]);
+
+    res.json({ message: 'Plato eliminado correctamente' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al eliminar el plato' });
+  }
+};
+module.exports = { createPlato, getPlatos, asignarInsumos, deletePlato };

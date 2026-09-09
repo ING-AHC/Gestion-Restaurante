@@ -3,30 +3,46 @@ const pool = require('../config/db');
 // Reporte 1: Resumen financiero (ganancia real)
 const getResumenFinanciero = async (req, res) => {
   const userId = req.userId;
+  const { mes, anio } = req.query;
 
   try {
-    // Sumamos el total de ventas reales (excluyendo consumo interno)
+    let filtroFechaVentas = '';
+    let paramsVentas = [userId];
+
+    if (mes && anio) {
+      filtroFechaVentas = 'AND EXTRACT(MONTH FROM v.fecha) = $2 AND EXTRACT(YEAR FROM v.fecha) = $3';
+      paramsVentas = [userId, mes, anio];
+    }
+
     const ventasResult = await pool.query(
-      `SELECT COALESCE(SUM(cantidad * precio_unitario), 0) AS total
-       FROM ventas
-       WHERE user_id = $1 AND tipo = 'venta'`,
-      [userId]
+      `SELECT COALESCE(SUM(vd.cantidad * vd.precio_unitario), 0) AS total
+       FROM ventas v
+       JOIN venta_detalle vd ON vd.venta_id = v.id
+       WHERE v.user_id = $1 AND v.tipo = 'venta' ${filtroFechaVentas}`,
+      paramsVentas
     );
 
-    // Sumamos el total de consumo interno (por separado, no cuenta como ingreso)
     const consumoInternoResult = await pool.query(
-      `SELECT COALESCE(SUM(cantidad * precio_unitario), 0) AS total
-       FROM ventas
-       WHERE user_id = $1 AND tipo = 'consumo_interno'`,
-      [userId]
+      `SELECT COALESCE(SUM(vd.cantidad * vd.precio_unitario), 0) AS total
+       FROM ventas v
+       JOIN venta_detalle vd ON vd.venta_id = v.id
+       WHERE v.user_id = $1 AND v.tipo = 'consumo_interno' ${filtroFechaVentas}`,
+      paramsVentas
     );
 
-    // Sumamos el total de compras (gastos)
+    let filtroFechaCompras = '';
+    let paramsCompras = [userId];
+
+    if (mes && anio) {
+      filtroFechaCompras = 'AND EXTRACT(MONTH FROM fecha) = $2 AND EXTRACT(YEAR FROM fecha) = $3';
+      paramsCompras = [userId, mes, anio];
+    }
+
     const comprasResult = await pool.query(
       `SELECT COALESCE(SUM(monto_total), 0) AS total
        FROM compras
-       WHERE user_id = $1`,
-      [userId]
+       WHERE user_id = $1 ${filtroFechaCompras}`,
+      paramsCompras
     );
 
     const totalVentas = parseFloat(ventasResult.rows[0].total);
@@ -73,18 +89,27 @@ const getDeudasProveedores = async (req, res) => {
 // Reporte 3: Gastos agrupados por categoría
 const getGastosPorCategoria = async (req, res) => {
   const userId = req.userId;
+  const { mes, anio } = req.query;
 
   try {
+    let filtroFecha = '';
+    let params = [userId];
+
+    if (mes && anio) {
+      filtroFecha = 'AND EXTRACT(MONTH FROM c.fecha) = $2 AND EXTRACT(YEAR FROM c.fecha) = $3';
+      params = [userId, mes, anio];
+    }
+
     const gastos = await pool.query(
       `SELECT
          cg.nombre AS categoria_nombre,
          SUM(c.monto_total) AS total_gastado
        FROM compras c
        JOIN categorias_gasto cg ON c.categoria_id = cg.id
-       WHERE c.user_id = $1
+       WHERE c.user_id = $1 ${filtroFecha}
        GROUP BY cg.id, cg.nombre
        ORDER BY total_gastado DESC`,
-      [userId]
+      params
     );
 
     res.json(gastos.rows);

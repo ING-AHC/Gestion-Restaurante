@@ -13,7 +13,7 @@ const createCompra = async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const montoTotal = items.reduce((total, item) => total + item.cantidad * item.valor_unitario, 0);
+   const montoTotal = items.reduce((total, item) => total + item.valor_unitario, 0);
 
     const compraResult = await client.query(
       `INSERT INTO compras (proveedor_id, categoria_id, monto_total, estado_pago, user_id)
@@ -54,13 +54,28 @@ const getCompras = async (req, res) => {
   try {
     const compras = await pool.query(
       `SELECT
-         c.*,
+         c.id,
+         c.proveedor_id,
+         c.categoria_id,
+         c.monto_total,
+         c.estado_pago,
+         c.fecha,
          p.nombre AS proveedor_nombre,
-         cg.nombre AS categoria_nombre
+         cg.nombre AS categoria_nombre,
+         json_agg(
+           json_build_object(
+             'insumo_nombre', i.nombre,
+             'cantidad', cd.cantidad,
+             'valor', cd.valor_unitario
+           )
+         ) AS items
        FROM compras c
        LEFT JOIN proveedores p ON c.proveedor_id = p.id
        LEFT JOIN categorias_gasto cg ON c.categoria_id = cg.id
+       LEFT JOIN compra_detalle cd ON cd.compra_id = c.id
+       LEFT JOIN insumos i ON cd.insumo_id = i.id
        WHERE c.user_id = $1
+       GROUP BY c.id, p.nombre, cg.nombre
        ORDER BY c.fecha DESC`,
       [userId]
     );

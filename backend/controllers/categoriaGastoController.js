@@ -38,5 +38,38 @@ const getcategoriaGasto = async (req, res) => {
     res.status(500).json({ error: 'Error en el servidor' });
   }
 };
+const deletecategoriaGasto = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
 
-module.exports = { createcategoriaGasto, getcategoriaGasto };
+  try {
+    const categoria = await pool.query(
+      'SELECT * FROM categorias_gasto WHERE id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    if (categoria.rows.length === 0) {
+      return res.status(404).json({ error: 'Categoría no encontrada' });
+    }
+
+    // Verificamos si la categoría tiene compras asociadas
+    const enUso = await pool.query(
+      'SELECT * FROM compras WHERE categoria_id = $1',
+      [id]
+    );
+
+    if (enUso.rows.length > 0) {
+      return res.status(400).json({
+        error: 'No se puede eliminar: esta categoría tiene compras registradas',
+      });
+    }
+
+    await pool.query('DELETE FROM categorias_gasto WHERE id = $1', [id]);
+
+    res.json({ message: 'Categoría eliminada correctamente' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al eliminar la categoría' });
+  }
+};
+module.exports = { createcategoriaGasto, getcategoriaGasto, deletecategoriaGasto };

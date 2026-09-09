@@ -1,0 +1,26 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap');
+
+@theme {
+  --font-display: "Bricolage Grotesque", sans-serif;
+  --font-sans: "Manrope", sans-serif;
+
+  --color-pizarra-950: #1a2e28;
+  --color-pizarra-900: #223b33;
+  --color-pizarra-800: #2d4c42;
+  --color-pizarra-700: #3a5f52;
+
+  --color-papel: #faf6ee;
+  --color-papel-card: #ffffff;
+
+  --color-mostaza-500: #e0a838;
+  --color-mostaza-600: #c8912a;
+
+  --color-terracota-500: #c1573f;
+  --color-terracota-600: #a8462f;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-papel);
+}
