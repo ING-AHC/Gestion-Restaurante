@@ -16,3 +16,8 @@ export const getGastosPorCategoria = async (mes, anio) => {
   const response = await api.get('/reportes/gastos-categoria', { params });
   return response.data;
 };
+export const getResumenDiario = async (mes, anio) => {
+  const params = mes && anio ? { mes, anio } : {};
+  const response = await api.get('/reportes/diario', { params });
+  return response.data;
+};

@@ -7,7 +7,7 @@ const navItems = [
   { to: '/proveedores', label: 'Proveedores' },
   { to: '/categorias-gasto', label: 'Categorías de gasto' },
   { to: '/compras', label: 'Compras' },
-  { to: '/platos', label: 'Platos' },
+  { to: '/productos', label: 'Productos' },
   { to: '/ventas', label: 'Ventas' },
   { to: '/rendimientos', label: 'Rendimientos' },
 ];

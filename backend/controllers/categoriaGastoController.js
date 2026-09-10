@@ -9,6 +9,15 @@ const createcategoriaGasto = async (req, res) => {
       return res.status(400).json({ error: 'El nombre es obligatorio' });
     }
 
+    const existente = await pool.query(
+      'SELECT * FROM categorias_gasto WHERE LOWER(nombre) = LOWER($1) AND user_id = $2',
+      [nombre, userId]
+    );
+
+    if (existente.rows.length > 0) {
+      return res.status(400).json({ error: `Ya existe una categoría llamada "${nombre}"` });
+    }
+
     const newcategoriaGasto = await pool.query(
       `INSERT INTO categorias_gasto (nombre, user_id)
        VALUES ($1, $2)
@@ -38,6 +47,7 @@ const getcategoriaGasto = async (req, res) => {
     res.status(500).json({ error: 'Error en el servidor' });
   }
 };
+
 const deletecategoriaGasto = async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
@@ -52,7 +62,6 @@ const deletecategoriaGasto = async (req, res) => {
       return res.status(404).json({ error: 'Categoría no encontrada' });
     }
 
-    // Verificamos si la categoría tiene compras asociadas
     const enUso = await pool.query(
       'SELECT * FROM compras WHERE categoria_id = $1',
       [id]
@@ -72,4 +81,5 @@ const deletecategoriaGasto = async (req, res) => {
     res.status(500).json({ error: 'Error al eliminar la categoría' });
   }
 };
+
 module.exports = { createcategoriaGasto, getcategoriaGasto, deletecategoriaGasto };

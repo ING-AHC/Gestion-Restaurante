@@ -5,6 +5,7 @@ import {
   getResumenFinanciero,
   getDeudasProveedores,
   getGastosPorCategoria,
+  getResumenDiario,
 } from '../services/reporteService';
 
 const COLORES_GRAFICA = ['#e0a838', '#3a5f52', '#c1573f', '#2d4c42', '#c8912a'];
@@ -16,13 +17,14 @@ const MESES = [
 
 function Dashboard() {
   const hoy = new Date();
-  const [mes, setMes] = useState(hoy.getMonth() + 1); // getMonth() da 0-11, sumamos 1
+  const [mes, setMes] = useState(hoy.getMonth() + 1);
   const [anio, setAnio] = useState(hoy.getFullYear());
   const [verTodo, setVerTodo] = useState(false);
 
   const [resumen, setResumen] = useState(null);
   const [deudas, setDeudas] = useState([]);
   const [gastosCategoria, setGastosCategoria] = useState([]);
+  const [resumenDiario, setResumenDiario] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -32,14 +34,16 @@ function Dashboard() {
         const mesFiltro = verTodo ? null : mes;
         const anioFiltro = verTodo ? null : anio;
 
-        const [resumenData, deudasData, gastosData] = await Promise.all([
+        const [resumenData, deudasData, gastosData, diarioData] = await Promise.all([
           getResumenFinanciero(mesFiltro, anioFiltro),
           getDeudasProveedores(),
           getGastosPorCategoria(mesFiltro, anioFiltro),
+          getResumenDiario(mesFiltro, anioFiltro),
         ]);
         setResumen(resumenData);
         setDeudas(deudasData);
         setGastosCategoria(gastosData);
+        setResumenDiario(diarioData);
       } catch (err) {
         console.error(err);
       } finally {
@@ -224,6 +228,57 @@ function Dashboard() {
               )}
             </motion.div>
           </div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.25 }}
+            className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-6 mt-6"
+          >
+            <h3 className="font-display font-semibold text-pizarra-900 mb-4">
+              Resumen por día
+            </h3>
+
+            {resumenDiario.length === 0 ? (
+              <p className="text-pizarra-700 text-sm">Sin movimientos en este período.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-pizarra-900/10 text-left">
+                    <th className="py-2 font-semibold text-pizarra-700">Fecha</th>
+                    <th className="py-2 font-semibold text-pizarra-700 text-right">Ventas</th>
+                    <th className="py-2 font-semibold text-pizarra-700 text-right">Compras</th>
+                    <th className="py-2 font-semibold text-pizarra-700 text-right">Ganancia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resumenDiario.map((dia) => (
+                    <tr key={dia.fecha} className="border-b border-pizarra-900/5 last:border-0">
+                      <td className="py-2 text-pizarra-900">
+                        {new Date(dia.fecha + 'T00:00:00').toLocaleDateString('es-CO', {
+                          day: 'numeric',
+                          month: 'short',
+                        })}
+                      </td>
+                      <td className="py-2 text-right text-pizarra-900">
+                        ${dia.ventas.toLocaleString()}
+                      </td>
+                      <td className="py-2 text-right text-pizarra-900">
+                        ${dia.compras.toLocaleString()}
+                      </td>
+                      <td
+                        className={`py-2 text-right font-semibold ${
+                          dia.ganancia >= 0 ? 'text-pizarra-900' : 'text-terracota-600'
+                        }`}
+                      >
+                        ${dia.ganancia.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </motion.div>
         </>
       )}
     </div>

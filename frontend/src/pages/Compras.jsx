@@ -2,34 +2,33 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getCompras, createCompra, marcarComoPagada } from '../services/compraService';
 import { getProveedores } from '../services/proveedorService';
-import { getCategoriasGasto } from '../services/categoriaGastoService';
 import { getInsumos } from '../services/insumoService';
+import InputMoneda from '../components/InputMoneda';
 
 function Compras() {
   const [compras, setCompras] = useState([]);
   const [proveedores, setProveedores] = useState([]);
-  const [categorias, setCategorias] = useState([]);
   const [insumos, setInsumos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const [proveedorId, setProveedorId] = useState('');
-  const [categoriaId, setCategoriaId] = useState('');
   const [estadoPago, setEstadoPago] = useState('pendiente');
-  const [items, setItems] = useState([{ insumo_id: '', cantidad: '', valor_unitario: '' }]);
+  const [items, setItems] = useState([
+    { esInsumo: true, insumo_id: '', descripcion: '', cantidad: '', valor_unitario: '' },
+  ]);
+  const [fechaFiltro, setFechaFiltro] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
     const loadAll = async () => {
       try {
-        const [comprasData, proveedoresData, categoriasData, insumosData] = await Promise.all([
+        const [comprasData, proveedoresData, insumosData] = await Promise.all([
           getCompras(),
           getProveedores(),
-          getCategoriasGasto(),
           getInsumos(),
         ]);
         setCompras(comprasData);
         setProveedores(proveedoresData);
-        setCategorias(categoriasData);
         setInsumos(insumosData);
       } catch (err) {
         console.error(err);
@@ -46,8 +45,21 @@ function Compras() {
     );
   };
 
+  const toggleTipoItem = (index, esInsumo) => {
+    setItems((prev) =>
+      prev.map((item, i) =>
+        i === index
+          ? { ...item, esInsumo, insumo_id: '', descripcion: '', cantidad: '' }
+          : item
+      )
+    );
+  };
+
   const addItemRow = () => {
-    setItems((prev) => [...prev, { insumo_id: '', cantidad: '', valor_unitario: '' }]);
+    setItems((prev) => [
+      ...prev,
+      { esInsumo: true, insumo_id: '', descripcion: '', cantidad: '', valor_unitario: '' },
+    ]);
   };
 
   const removeItemRow = (index) => {
@@ -64,13 +76,13 @@ function Compras() {
     setError('');
 
     try {
-      const nueva = await createCompra({
+      await createCompra({
         proveedor_id: proveedorId,
-        categoria_id: categoriaId,
         estado_pago: estadoPago,
         items: items.map((item) => ({
-          insumo_id: item.insumo_id,
-          cantidad: parseFloat(item.cantidad),
+          insumo_id: item.esInsumo ? item.insumo_id : null,
+          descripcion: item.esInsumo ? null : item.descripcion,
+          cantidad: item.esInsumo ? parseFloat(item.cantidad) : null,
           valor_unitario: parseFloat(item.valor_unitario),
         })),
       });
@@ -79,9 +91,8 @@ function Compras() {
       setCompras(comprasActualizadas);
 
       setProveedorId('');
-      setCategoriaId('');
       setEstadoPago('pendiente');
-      setItems([{ insumo_id: '', cantidad: '', valor_unitario: '' }]);
+      setItems([{ esInsumo: true, insumo_id: '', descripcion: '', cantidad: '', valor_unitario: '' }]);
     } catch (err) {
       setError(err.response?.data?.error || 'Error al registrar la compra');
     }
@@ -95,6 +106,11 @@ function Compras() {
       console.error(err);
     }
   };
+
+  const comprasFiltradas = compras.filter((compra) => {
+    const fechaCompra = compra.fecha.split('T')[0];
+    return fechaCompra === fechaFiltro;
+  });
 
   return (
     <div>
@@ -110,40 +126,21 @@ function Compras() {
         >
           <h3 className="font-display font-semibold text-pizarra-900">Nueva compra</h3>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
-                Proveedor
-              </label>
-              <select
-                value={proveedorId}
-                onChange={(e) => setProveedorId(e.target.value)}
-                required
-                className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
-              >
-                <option value="">Selecciona...</option>
-                {proveedores.map((p) => (
-                  <option key={p.id} value={p.id}>{p.nombre}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
-                Categoría
-              </label>
-              <select
-                value={categoriaId}
-                onChange={(e) => setCategoriaId(e.target.value)}
-                required
-                className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
-              >
-                <option value="">Selecciona...</option>
-                {categorias.map((c) => (
-                  <option key={c.id} value={c.id}>{c.nombre}</option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
+              Proveedor
+            </label>
+            <select
+              value={proveedorId}
+              onChange={(e) => setProveedorId(e.target.value)}
+              required
+              className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+            >
+              <option value="">Selecciona...</option>
+              {proveedores.map((p) => (
+                <option key={p.id} value={p.id}>{p.nombre}</option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -163,58 +160,91 @@ function Compras() {
           <div className="border-t border-pizarra-900/10 pt-4">
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-semibold text-pizarra-800">
-                Insumos comprados
+                Items de la compra
               </label>
               <button
                 type="button"
                 onClick={addItemRow}
                 className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
               >
-                + Agregar insumo
+                + Agregar item
               </button>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               {items.map((item, index) => (
-                <div key={index} className="flex gap-2 items-center">
-                  <select
-                    value={item.insumo_id}
-                    onChange={(e) => updateItem(index, 'insumo_id', e.target.value)}
-                    required
-                    className="flex-1 px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
-                  >
-                    <option value="">Insumo...</option>
-                    {insumos.map((i) => (
-                      <option key={i.id} value={i.id}>{i.nombre}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Cant."
-                    value={item.cantidad}
-                    onChange={(e) => updateItem(index, 'cantidad', e.target.value)}
-                    required
-                    className="w-20 px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
-                  />
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Valor pagado"
-                    value={item.valor_unitario}
-                    onChange={(e) => updateItem(index, 'valor_unitario', e.target.value)}
-                    required
-                    className="w-24 px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
-                  />
-                  {items.length > 1 && (
+                <div key={index} className="bg-papel rounded-xl p-3 space-y-2">
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => removeItemRow(index)}
-                      className="text-terracota-500 hover:text-terracota-600 text-sm px-1"
+                      onClick={() => toggleTipoItem(index, true)}
+                      className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                        item.esInsumo ? 'bg-pizarra-900 text-papel' : 'bg-pizarra-900/5 text-pizarra-700'
+                      }`}
                     >
-                      ✕
+                      Insumo
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleTipoItem(index, false)}
+                      className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                        !item.esInsumo ? 'bg-pizarra-900 text-papel' : 'bg-pizarra-900/5 text-pizarra-700'
+                      }`}
+                    >
+                      Gasto general
+                    </button>
+                    {items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeItemRow(index)}
+                        className="text-terracota-500 hover:text-terracota-600 text-sm px-1"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {item.esInsumo ? (
+                    <div className="flex gap-2">
+                      <select
+                        value={item.insumo_id}
+                        onChange={(e) => updateItem(index, 'insumo_id', e.target.value)}
+                        required
+                        className="flex-1 px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
+                      >
+                        <option value="">Insumo...</option>
+                        {insumos.map((i) => (
+                          <option key={i.id} value={i.id}>{i.nombre}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="Cant."
+                        value={item.cantidad}
+                        onChange={(e) => updateItem(index, 'cantidad', e.target.value)}
+                        required
+                        className="w-20 px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
+                      />
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Descripción (ej: pago de agua)"
+                      value={item.descripcion}
+                      onChange={(e) => updateItem(index, 'descripcion', e.target.value)}
+                      required
+                      className="w-full px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
+                    />
                   )}
+
+                  <InputMoneda
+                    value={item.valor_unitario}
+                    onChange={(val) => updateItem(index, 'valor_unitario', val)}
+                    placeholder="Valor pagado"
+                    required
+                    className="w-full px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
+                  />
                 </div>
               ))}
             </div>
@@ -242,20 +272,36 @@ function Compras() {
         </motion.form>
 
         <div className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 overflow-hidden h-fit">
+          <div className="p-4 border-b border-pizarra-900/10 flex items-center gap-3">
+            <label className="text-sm font-semibold text-pizarra-800">Ver del día:</label>
+            <input
+              type="date"
+              value={fechaFiltro}
+              onChange={(e) => setFechaFiltro(e.target.value)}
+              className="px-3 py-1.5 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => setFechaFiltro(new Date().toISOString().split('T')[0])}
+              className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
+            >
+              Hoy
+            </button>
+          </div>
+
           {loading ? (
             <p className="p-6 text-pizarra-700 text-sm">Cargando...</p>
-          ) : compras.length === 0 ? (
-            <p className="p-6 text-pizarra-700 text-sm">No hay compras registradas.</p>
+          ) : comprasFiltradas.length === 0 ? (
+            <p className="p-6 text-pizarra-700 text-sm">No hay compras registradas para este día.</p>
           ) : (
             <div className="divide-y divide-pizarra-900/5">
-              {compras.map((compra) => (
+              {comprasFiltradas.map((compra) => (
                 <div key={compra.id} className="p-4">
                   <div className="flex items-center justify-between mb-1.5">
                     <div>
                       <p className="font-medium text-pizarra-900 text-sm">
                         {compra.proveedor_nombre}
                       </p>
-                      <p className="text-xs text-pizarra-700">{compra.categoria_nombre}</p>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -280,7 +326,12 @@ function Compras() {
                   <div className="text-xs text-pizarra-700 space-y-0.5 pl-1">
                     {compra.items.map((item, i) => (
                       <p key={i}>
-                        {item.insumo_nombre} · {item.cantidad} · ${parseFloat(item.valor).toLocaleString()}
+                        {item.insumo_nombre}
+                        {item.cantidad ? ` · ${item.cantidad}` : ''} · $
+                        {parseFloat(item.valor).toLocaleString()}
+                        {item.categoria_nombre && (
+                          <span className="text-pizarra-700/50"> · {item.categoria_nombre}</span>
+                        )}
                       </p>
                     ))}
                   </div>

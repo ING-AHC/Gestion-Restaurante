@@ -8,7 +8,7 @@ import Insumos from './pages/Insumos';
 import Proveedores from './pages/Proveedores';
 import CategoriasGasto from './pages/CategoriasGasto';
 import Compras from './pages/Compras';
-import Platos from './pages/Platos';
+import Productos from './pages/Productos';
 import Ventas from './pages/Ventas';
 import Rendimientos from './pages/Rendimientos';
 function App() {
@@ -30,7 +30,7 @@ function App() {
           <Route path="/proveedores" element={<Proveedores />} />
 <Route path="/categorias-gasto" element={<CategoriasGasto />} />
 <Route path="/compras" element={<Compras />} />
-<Route path="/platos" element={<Platos />} />
+<Route path="/productos" element={<Productos />} />
 <Route path="/ventas" element={<Ventas />} />
 <Route path="/rendimientos" element={<Rendimientos />} />
         </Route>

@@ -9,6 +9,15 @@ const createProveedores = async (req, res) => {
       return res.status(400).json({ error: 'El nombre es obligatorio' });
     }
 
+    const existente = await pool.query(
+      'SELECT * FROM proveedores WHERE LOWER(nombre) = LOWER($1) AND user_id = $2',
+      [nombre, userId]
+    );
+
+    if (existente.rows.length > 0) {
+      return res.status(400).json({ error: `Ya existe un proveedor llamado "${nombre}"` });
+    }
+
     const newProveedores = await pool.query(
       `INSERT INTO proveedores (nombre, telefono, user_id)
        VALUES ($1, $2, $3)
@@ -38,6 +47,7 @@ const getProveedores = async (req, res) => {
     res.status(500).json({ error: 'Error en el servidor' });
   }
 };
+
 const deleteProveedor = async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
@@ -52,7 +62,6 @@ const deleteProveedor = async (req, res) => {
       return res.status(404).json({ error: 'Proveedor no encontrado' });
     }
 
-    // Verificamos si el proveedor tiene compras asociadas
     const enUso = await pool.query(
       'SELECT * FROM compras WHERE proveedor_id = $1',
       [id]

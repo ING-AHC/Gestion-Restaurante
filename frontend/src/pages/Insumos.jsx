@@ -1,26 +1,36 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getInsumos, createInsumo, deleteInsumo } from '../services/insumoService';
+import { getCategoriasGasto } from '../services/categoriaGastoService';
+
 function Insumos() {
   const [insumos, setInsumos] = useState([]);
+  const [categorias, setCategorias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [nombre, setNombre] = useState('');
   const [unidadMedida, setUnidadMedida] = useState('');
   const [cantidadActual, setCantidadActual] = useState('');
+  const [categoriaId, setCategoriaId] = useState('');
   const [error, setError] = useState('');
+  const [busqueda, setBusqueda] = useState('');
+  const [filtroCategoria, setFiltroCategoria] = useState('');
 
   useEffect(() => {
-    const loadInsumos = async () => {
+    const loadAll = async () => {
       try {
-        const data = await getInsumos();
-        setInsumos(data);
+        const [insumosData, categoriasData] = await Promise.all([
+          getInsumos(),
+          getCategoriasGasto(),
+        ]);
+        setInsumos(insumosData);
+        setCategorias(categoriasData);
       } catch (err) {
-        console.error('Error al cargar insumos', err);
+        console.error('Error al cargar datos', err);
       } finally {
         setLoading(false);
       }
     };
-    loadInsumos();
+    loadAll();
   }, []);
 
   const handleSubmit = async (e) => {
@@ -32,29 +42,44 @@ function Insumos() {
         nombre,
         unidad_medida: unidadMedida,
         cantidad_actual: cantidadActual || 0,
+        categoria_id: categoriaId,
       });
 
+      const categoria = categorias.find((c) => c.id === parseInt(categoriaId));
+      const insumoConCategoria = {
+        ...nuevo,
+        categoria_nombre: categoria ? categoria.nombre : null,
+      };
+
       setInsumos((prev) =>
-        [...prev, nuevo].sort((a, b) => a.nombre.localeCompare(b.nombre))
+        [...prev, insumoConCategoria].sort((a, b) => a.nombre.localeCompare(b.nombre))
       );
 
       setNombre('');
       setUnidadMedida('');
       setCantidadActual('');
+      setCategoriaId('');
     } catch (err) {
       setError(err.response?.data?.error || 'Error al crear el insumo');
     }
   };
-  const handleDelete = async (id) => {
-  if (!confirm('¿Seguro que quieres eliminar este insumo?')) return;
 
-  try {
-    await deleteInsumo(id);
-    setInsumos((prev) => prev.filter((i) => i.id !== id));
-  } catch (err) {
-    alert(err.response?.data?.error || 'Error al eliminar el insumo');
-  }
-};
+  const handleDelete = async (id) => {
+    if (!confirm('¿Seguro que quieres eliminar este insumo?')) return;
+
+    try {
+      await deleteInsumo(id);
+      setInsumos((prev) => prev.filter((i) => i.id !== id));
+    } catch (err) {
+      alert(err.response?.data?.error || 'Error al eliminar el insumo');
+    }
+  };
+
+  const insumosFiltrados = insumos.filter((insumo) => {
+    const coincideBusqueda = insumo.nombre.toLowerCase().includes(busqueda.toLowerCase());
+    const coincideCategoria = !filtroCategoria || insumo.categoria_id === parseInt(filtroCategoria);
+    return coincideBusqueda && coincideCategoria;
+  });
 
   return (
     <div>
@@ -63,7 +88,6 @@ function Insumos() {
       </h2>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Formulario */}
         <motion.form
           onSubmit={handleSubmit}
           initial={{ opacity: 0, y: 12 }}
@@ -90,16 +114,40 @@ function Insumos() {
 
           <div>
             <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
-              Unidad de medida
+              Categoría
             </label>
-            <input
-              type="text"
-              value={unidadMedida}
-              onChange={(e) => setUnidadMedida(e.target.value)}
-              placeholder="libras, kilos, unidad..."
+            <select
+              value={categoriaId}
+              onChange={(e) => setCategoriaId(e.target.value)}
               required
               className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
-            />
+            >
+              <option value="">Selecciona...</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
+              Unidad de medida
+            </label>
+            <select
+              value={unidadMedida}
+              onChange={(e) => setUnidadMedida(e.target.value)}
+              required
+              className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+            >
+              <option value="">Selecciona...</option>
+              <option value="unidad">Unidad</option>
+              <option value="libras">Libras</option>
+              <option value="kilos">Kilos</option>
+              <option value="gramos">Gramos</option>
+              <option value="litros">Litros</option>
+              <option value="mililitros">Mililitros</option>
+              <option value="paquete">Paquete</option>
+            </select>
           </div>
 
           <div>
@@ -130,48 +178,70 @@ function Insumos() {
           </button>
         </motion.form>
 
-        {/* Lista */}
         <div className="lg:col-span-2 bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 overflow-hidden">
+          <div className="p-4 border-b border-pizarra-900/10 flex gap-3">
+            <input
+              type="text"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar insumo..."
+              className="flex-1 px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+            />
+            <select
+              value={filtroCategoria}
+              onChange={(e) => setFiltroCategoria(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+            >
+              <option value="">Todas las categorías</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+            </select>
+          </div>
+
           {loading ? (
             <p className="p-6 text-pizarra-700 text-sm">Cargando...</p>
-          ) : insumos.length === 0 ? (
+          ) : insumosFiltrados.length === 0 ? (
             <p className="p-6 text-pizarra-700 text-sm">
-              Todavía no hay insumos registrados.
+              {insumos.length === 0 ? 'Todavía no hay insumos registrados.' : 'No hay insumos que coincidan con el filtro.'}
             </p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-pizarra-900/10 text-left">
                   <th className="px-5 py-3 font-semibold text-pizarra-700">Nombre</th>
+                  <th className="px-5 py-3 font-semibold text-pizarra-700">Categoría</th>
                   <th className="px-5 py-3 font-semibold text-pizarra-700">Unidad</th>
                   <th className="px-5 py-3 font-semibold text-pizarra-700 text-right">
                     Cantidad actual
-                
                   </th>
                   <th className="px-5 py-3"></th>
                 </tr>
               </thead>
-            <tbody>
-  {insumos.map((insumo) => (
-    <tr key={insumo.id} className="border-b border-pizarra-900/5 last:border-0">
-      <td className="px-5 py-3 text-pizarra-900 font-medium">
-        {insumo.nombre}
-      </td>
-      <td className="px-5 py-3 text-pizarra-700">{insumo.unidad_medida}</td>
-      <td className="px-5 py-3 text-right text-pizarra-900 font-semibold">
-        {parseFloat(insumo.cantidad_actual).toLocaleString()}
-      </td>
-      <td className="px-5 py-3 text-right">
-        <button
-          onClick={() => handleDelete(insumo.id)}
-          className="text-terracota-500 hover:text-terracota-600 text-xs font-semibold"
-        >
-          Eliminar
-        </button>
-      </td>
-    </tr>
-  ))}
-</tbody>
+              <tbody>
+                {insumosFiltrados.map((insumo) => (
+                  <tr key={insumo.id} className="border-b border-pizarra-900/5 last:border-0">
+                    <td className="px-5 py-3 text-pizarra-900 font-medium">
+                      {insumo.nombre}
+                    </td>
+                    <td className="px-5 py-3 text-pizarra-700">
+                      {insumo.categoria_nombre || '-'}
+                    </td>
+                    <td className="px-5 py-3 text-pizarra-700">{insumo.unidad_medida}</td>
+                    <td className="px-5 py-3 text-right text-pizarra-900 font-semibold">
+                      {parseFloat(insumo.cantidad_actual).toLocaleString()}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <button
+                        onClick={() => handleDelete(insumo.id)}
+                        className="text-terracota-500 hover:text-terracota-600 text-xs font-semibold"
+                      >
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
             </table>
           )}
         </div>

@@ -61,6 +61,63 @@ const getResumenFinanciero = async (req, res) => {
     res.status(500).json({ error: 'Error en el servidor' });
   }
 };
+const getResumenDiario = async (req, res) => {
+  const userId = req.userId;
+  const { mes, anio } = req.query;
+
+  try {
+    let filtroFecha = '';
+    let params = [userId];
+
+    if (mes && anio) {
+      filtroFecha = 'AND EXTRACT(MONTH FROM fecha) = $2 AND EXTRACT(YEAR FROM fecha) = $3';
+      params = [userId, mes, anio];
+    }
+
+    // Ventas agrupadas por día
+    const ventasPorDia = await pool.query(
+      `SELECT v.fecha, SUM(vd.cantidad * vd.precio_unitario) AS total
+       FROM ventas v
+       JOIN venta_detalle vd ON vd.venta_id = v.id
+       WHERE v.user_id = $1 AND v.tipo = 'venta' ${filtroFecha.replace('fecha', 'v.fecha')}
+       GROUP BY v.fecha`,
+      params
+    );
+
+    // Compras agrupadas por día
+    const comprasPorDia = await pool.query(
+      `SELECT fecha, SUM(monto_total) AS total
+       FROM compras
+       WHERE user_id = $1 ${filtroFecha}
+       GROUP BY fecha`,
+      params
+    );
+
+    // Combinamos ambos resultados en un solo mapa por fecha
+    const resumenPorFecha = {};
+
+    ventasPorDia.rows.forEach((row) => {
+      const fecha = row.fecha.toISOString().split('T')[0];
+      if (!resumenPorFecha[fecha]) resumenPorFecha[fecha] = { fecha, ventas: 0, compras: 0 };
+      resumenPorFecha[fecha].ventas = parseFloat(row.total);
+    });
+
+    comprasPorDia.rows.forEach((row) => {
+      const fecha = row.fecha.toISOString().split('T')[0];
+      if (!resumenPorFecha[fecha]) resumenPorFecha[fecha] = { fecha, ventas: 0, compras: 0 };
+      resumenPorFecha[fecha].compras = parseFloat(row.total);
+    });
+
+    const resultado = Object.values(resumenPorFecha)
+      .map((dia) => ({ ...dia, ganancia: dia.ventas - dia.compras }))
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+    res.json(resultado);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error en el servidor' });
+  }
+};
 
 // Reporte 2: Cuánto se le debe a cada proveedor
 const getDeudasProveedores = async (req, res) => {
@@ -103,9 +160,11 @@ const getGastosPorCategoria = async (req, res) => {
     const gastos = await pool.query(
       `SELECT
          cg.nombre AS categoria_nombre,
-         SUM(c.monto_total) AS total_gastado
-       FROM compras c
-       JOIN categorias_gasto cg ON c.categoria_id = cg.id
+         SUM(cd.valor_unitario) AS total_gastado
+       FROM compra_detalle cd
+       JOIN compras c ON cd.compra_id = c.id
+       JOIN insumos i ON cd.insumo_id = i.id
+       JOIN categorias_gasto cg ON i.categoria_id = cg.id
        WHERE c.user_id = $1 ${filtroFecha}
        GROUP BY cg.id, cg.nombre
        ORDER BY total_gastado DESC`,
@@ -119,4 +178,4 @@ const getGastosPorCategoria = async (req, res) => {
   }
 };
 
-module.exports = { getResumenFinanciero, getDeudasProveedores, getGastosPorCategoria };
+module.exports = { getResumenFinanciero, getDeudasProveedores, getGastosPorCategoria, getResumenDiario };
