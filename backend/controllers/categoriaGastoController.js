@@ -5,24 +5,26 @@ const createcategoriaGasto = async (req, res) => {
   const userId = req.userId;
 
   try {
-    if (!nombre) {
+    if (!nombre || !String(nombre).trim()) {
       return res.status(400).json({ error: 'El nombre es obligatorio' });
     }
 
+    const nombreLimpio = String(nombre).trim();
+
     const existente = await pool.query(
-      'SELECT * FROM categorias_gasto WHERE LOWER(nombre) = LOWER($1) AND user_id = $2',
-      [nombre, userId]
+      'SELECT id FROM categorias_gasto WHERE LOWER(nombre) = LOWER($1) AND user_id = $2',
+      [nombreLimpio, userId]
     );
 
     if (existente.rows.length > 0) {
-      return res.status(400).json({ error: `Ya existe una categoría llamada "${nombre}"` });
+      return res.status(400).json({ error: `Ya existe una categoría llamada "${nombreLimpio}"` });
     }
 
     const newcategoriaGasto = await pool.query(
       `INSERT INTO categorias_gasto (nombre, user_id)
        VALUES ($1, $2)
        RETURNING *`,
-      [nombre, userId]
+      [nombreLimpio, userId]
     );
 
     res.status(201).json(newcategoriaGasto.rows[0]);
@@ -52,9 +54,13 @@ const deletecategoriaGasto = async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
 
+  if (!Number.isInteger(Number(id))) {
+    return res.status(400).json({ error: 'Identificador no válido' });
+  }
+
   try {
     const categoria = await pool.query(
-      'SELECT * FROM categorias_gasto WHERE id = $1 AND user_id = $2',
+      'SELECT id FROM categorias_gasto WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
 
@@ -62,18 +68,29 @@ const deletecategoriaGasto = async (req, res) => {
       return res.status(404).json({ error: 'Categoría no encontrada' });
     }
 
-    const enUso = await pool.query(
-      'SELECT * FROM compras WHERE categoria_id = $1',
-      [id]
+    const enInsumos = await pool.query(
+      'SELECT id FROM insumos WHERE categoria_id = $1 AND user_id = $2 LIMIT 1',
+      [id, userId]
     );
 
-    if (enUso.rows.length > 0) {
+    if (enInsumos.rows.length > 0) {
       return res.status(400).json({
-        error: 'No se puede eliminar: esta categoría tiene compras registradas',
+        error: 'No se puede eliminar: esta categoría tiene insumos asignados',
       });
     }
 
-    await pool.query('DELETE FROM categorias_gasto WHERE id = $1', [id]);
+    const enGastos = await pool.query(
+      'SELECT id FROM compra_detalle WHERE categoria_id = $1 LIMIT 1',
+      [id]
+    );
+
+    if (enGastos.rows.length > 0) {
+      return res.status(400).json({
+        error: 'No se puede eliminar: esta categoría tiene gastos registrados',
+      });
+    }
+
+    await pool.query('DELETE FROM categorias_gasto WHERE id = $1 AND user_id = $2', [id, userId]);
 
     res.json({ message: 'Categoría eliminada correctamente' });
   } catch (error) {
