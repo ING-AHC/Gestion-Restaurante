@@ -5,24 +5,49 @@ const createInsumo = async (req, res) => {
   const userId = req.userId;
 
   try {
-    if (!nombre || !unidad_medida || !categoria_id) {
+    const nombreLimpio = String(nombre || '').trim();
+
+    if (!nombreLimpio || !unidad_medida || !categoria_id) {
       return res.status(400).json({ error: 'Nombre, unidad de medida y categoría son obligatorios' });
     }
 
+    const categoriaId = Number(categoria_id);
+    if (!Number.isInteger(categoriaId)) {
+      return res.status(400).json({ error: 'Categoría no válida' });
+    }
+
+    const cantidad =
+      cantidad_actual === undefined || cantidad_actual === null || cantidad_actual === ''
+        ? 0
+        : Number(cantidad_actual);
+
+    if (!Number.isFinite(cantidad) || cantidad < 0) {
+      return res.status(400).json({ error: 'La cantidad inicial no es válida' });
+    }
+
+    const categoriaCheck = await pool.query(
+      'SELECT id FROM categorias_gasto WHERE id = $1 AND user_id = $2',
+      [categoriaId, userId]
+    );
+
+    if (categoriaCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Categoría no encontrada' });
+    }
+
     const existente = await pool.query(
-      'SELECT * FROM insumos WHERE LOWER(nombre) = LOWER($1) AND user_id = $2',
-      [nombre, userId]
+      'SELECT id FROM insumos WHERE LOWER(nombre) = LOWER($1) AND user_id = $2',
+      [nombreLimpio, userId]
     );
 
     if (existente.rows.length > 0) {
-      return res.status(400).json({ error: `Ya existe un insumo llamado "${nombre}"` });
+      return res.status(400).json({ error: `Ya existe un insumo llamado "${nombreLimpio}"` });
     }
 
     const newInsumo = await pool.query(
       `INSERT INTO insumos (nombre, unidad_medida, cantidad_actual, categoria_id, user_id)
-       VALUES ($1, $2, COALESCE($3, 0), $4, $5)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [nombre, unidad_medida, cantidad_actual, categoria_id, userId]
+      [nombreLimpio, unidad_medida, cantidad, categoriaId, userId]
     );
 
     res.status(201).json(newInsumo.rows[0]);
@@ -57,20 +82,32 @@ const updateInsumo = async (req, res) => {
   const { cantidad_actual } = req.body;
   const userId = req.userId;
 
+  if (!Number.isInteger(Number(id))) {
+    return res.status(400).json({ error: 'Identificador no válido' });
+  }
+
+  const cantidad = Number(cantidad_actual);
+  if (
+    cantidad_actual === undefined ||
+    cantidad_actual === null ||
+    cantidad_actual === '' ||
+    !Number.isFinite(cantidad) ||
+    cantidad < 0
+  ) {
+    return res.status(400).json({ error: 'La cantidad no es válida' });
+  }
+
   try {
-    const insumo = await pool.query(
-      'SELECT * FROM insumos WHERE id = $1 AND user_id = $2',
-      [id, userId]
+    const updated = await pool.query(
+      `UPDATE insumos SET cantidad_actual = $1
+       WHERE id = $2 AND user_id = $3
+       RETURNING *`,
+      [cantidad, id, userId]
     );
 
-    if (insumo.rows.length === 0) {
+    if (updated.rows.length === 0) {
       return res.status(404).json({ error: 'Insumo no encontrado' });
     }
-
-    const updated = await pool.query(
-      `UPDATE insumos SET cantidad_actual = $1 WHERE id = $2 RETURNING *`,
-      [cantidad_actual, id]
-    );
 
     res.json(updated.rows[0]);
   } catch (error) {
@@ -83,9 +120,13 @@ const deleteInsumo = async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
 
+  if (!Number.isInteger(Number(id))) {
+    return res.status(400).json({ error: 'Identificador no válido' });
+  }
+
   try {
     const insumo = await pool.query(
-      'SELECT * FROM insumos WHERE id = $1 AND user_id = $2',
+      'SELECT id FROM insumos WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
 
@@ -93,21 +134,38 @@ const deleteInsumo = async (req, res) => {
       return res.status(404).json({ error: 'Insumo no encontrado' });
     }
 
-    const enUso = await pool.query(
-      'SELECT * FROM plato_insumos WHERE insumo_id = $1',
+    const enReceta = await pool.query(
+      'SELECT id FROM plato_insumos WHERE insumo_id = $1 LIMIT 1',
       [id]
     );
 
-    if (enUso.rows.length > 0) {
+    if (enReceta.rows.length > 0) {
       return res.status(400).json({
         error: 'No se puede eliminar: este insumo está siendo usado en la receta de uno o más productos',
       });
     }
 
-    await pool.query('DELETE FROM insumos WHERE id = $1', [id]);
+    const enBebida = await pool.query(
+      'SELECT id FROM productos WHERE insumo_id = $1 AND user_id = $2 LIMIT 1',
+      [id, userId]
+    );
+
+    if (enBebida.rows.length > 0) {
+      return res.status(400).json({
+        error: 'No se puede eliminar: este insumo está ligado a una bebida del menú',
+      });
+    }
+
+    await pool.query('DELETE FROM insumos WHERE id = $1 AND user_id = $2', [id, userId]);
 
     res.json({ message: 'Insumo eliminado correctamente' });
   } catch (error) {
+    // 23503 = violación de clave foránea (el insumo tiene registros asociados)
+    if (error.code === '23503') {
+      return res.status(400).json({
+        error: 'No se puede eliminar: este insumo tiene registros asociados (por ejemplo compras)',
+      });
+    }
     console.error(error);
     res.status(500).json({ error: 'Error al eliminar el insumo' });
   }
