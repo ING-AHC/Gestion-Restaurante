@@ -1,7 +1,7 @@
 const pool = require('../config/db');
 
 const createCompra = async (req, res) => {
-  const { proveedor_id, estado_pago, items } = req.body;
+  const { proveedor_id, estado_pago, items, fecha } = req.body;
   const userId = req.userId;
 
   if (!items || items.length === 0) {
@@ -16,10 +16,10 @@ const createCompra = async (req, res) => {
     const montoTotal = items.reduce((total, item) => total + item.valor_unitario, 0);
 
     const compraResult = await client.query(
-      `INSERT INTO compras (proveedor_id, monto_total, estado_pago, user_id)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO compras (proveedor_id, monto_total, estado_pago, fecha, user_id)
+       VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5)
        RETURNING *`,
-      [proveedor_id, montoTotal, estado_pago || 'pendiente', userId]
+      [proveedor_id, montoTotal, estado_pago || 'pendiente', fecha, userId]
     );
 
     const compraId = compraResult.rows[0].id;
@@ -31,7 +31,6 @@ const createCompra = async (req, res) => {
         [compraId, item.insumo_id || null, item.cantidad || null, item.valor_unitario, item.descripcion || null]
       );
 
-      // Solo actualizamos inventario si esta línea tiene un insumo real asociado
       if (item.insumo_id) {
         await client.query(
           `UPDATE insumos SET cantidad_actual = cantidad_actual + $1 WHERE id = $2`,

@@ -2,6 +2,14 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import {
+  TrendingUp,
+  TrendingDown,
+  ShoppingBag,
+  Receipt,
+  AlertCircle,
+  CalendarDays,
+} from 'lucide-react';
+import {
   getResumenFinanciero,
   getDeudasProveedores,
   getGastosPorCategoria,
@@ -58,6 +66,8 @@ function Dashboard() {
     value: parseFloat(g.total_gastado),
   }));
 
+  const esPositiva = resumen?.ganancia_real >= 0;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
@@ -71,7 +81,7 @@ function Dashboard() {
             className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
               verTodo
                 ? 'bg-pizarra-900 text-papel'
-                : 'bg-pizarra-900/5 text-pizarra-700'
+                : 'bg-pizarra-900/5 text-pizarra-700 hover:bg-pizarra-900/10'
             }`}
           >
             Histórico total
@@ -107,45 +117,79 @@ function Dashboard() {
         <p className="text-pizarra-700 text-sm">Cargando resumen...</p>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-              className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-5"
-            >
-              <p className="text-sm text-pizarra-700 font-medium">Ventas</p>
-              <p className="font-display text-3xl font-bold text-pizarra-900 mt-1">
-                ${resumen.total_ventas.toLocaleString()}
-              </p>
-            </motion.div>
+          {/* Ganancia real: tarjeta destacada */}
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            className="bg-pizarra-950 rounded-2xl shadow-lg p-7 mb-4 relative overflow-hidden"
+          >
+            <div
+              className="absolute inset-0 opacity-[0.06] pointer-events-none"
+              style={{
+                backgroundImage:
+                  'radial-gradient(circle at 1px 1px, white 1px, transparent 0)',
+                backgroundSize: '18px 18px',
+              }}
+            />
+            <div className="relative flex items-center justify-between flex-wrap gap-4">
+              <div>
+                <p className="text-sm text-papel/60 font-medium mb-1">Ganancia real</p>
+                <p
+                  className={`font-display text-4xl sm:text-5xl font-bold ${
+                    esPositiva ? 'text-mostaza-500' : 'text-terracota-500'
+                  }`}
+                >
+                  ${resumen.ganancia_real.toLocaleString()}
+                </p>
+              </div>
+              <div
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center ${
+                  esPositiva ? 'bg-mostaza-500/15' : 'bg-terracota-500/15'
+                }`}
+              >
+                {esPositiva ? (
+                  <TrendingUp size={26} className="text-mostaza-500" />
+                ) : (
+                  <TrendingDown size={26} className="text-terracota-500" />
+                )}
+              </div>
+            </div>
+          </motion.div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.05 }}
-              className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-5"
+              className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-5 flex items-center gap-4 hover:shadow-md transition-shadow"
             >
-              <p className="text-sm text-pizarra-700 font-medium">Gastos</p>
-              <p className="font-display text-3xl font-bold text-pizarra-900 mt-1">
-                ${resumen.total_compras.toLocaleString()}
-              </p>
+              <div className="w-11 h-11 rounded-xl bg-pizarra-900/5 flex items-center justify-center shrink-0">
+                <ShoppingBag size={20} className="text-pizarra-700" />
+              </div>
+              <div>
+                <p className="text-sm text-pizarra-700 font-medium">Ventas</p>
+                <p className="font-display text-2xl font-bold text-pizarra-900">
+                  ${resumen.total_ventas.toLocaleString()}
+                </p>
+              </div>
             </motion.div>
 
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.1 }}
-              className="bg-pizarra-900 rounded-2xl shadow-sm p-5"
+              className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-5 flex items-center gap-4 hover:shadow-md transition-shadow"
             >
-              <p className="text-sm text-papel/70 font-medium">Ganancia real</p>
-              <p
-                className={`font-display text-3xl font-bold mt-1 ${
-                  resumen.ganancia_real >= 0 ? 'text-mostaza-500' : 'text-terracota-500'
-                }`}
-              >
-                ${resumen.ganancia_real.toLocaleString()}
-              </p>
+              <div className="w-11 h-11 rounded-xl bg-pizarra-900/5 flex items-center justify-center shrink-0">
+                <Receipt size={20} className="text-pizarra-700" />
+              </div>
+              <div>
+                <p className="text-sm text-pizarra-700 font-medium">Gastos</p>
+                <p className="font-display text-2xl font-bold text-pizarra-900">
+                  ${resumen.total_compras.toLocaleString()}
+                </p>
+              </div>
             </motion.div>
           </div>
 
@@ -203,11 +247,14 @@ function Dashboard() {
               transition={{ duration: 0.3, delay: 0.2 }}
               className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-6"
             >
-              <h3 className="font-display font-semibold text-pizarra-900 mb-4">
-                Deudas a proveedores
-              </h3>
-              <p className="text-xs text-pizarra-700 mb-3">
-                (siempre muestra el total pendiente actual)
+              <div className="flex items-center gap-2 mb-1">
+                <AlertCircle size={16} className="text-terracota-500" />
+                <h3 className="font-display font-semibold text-pizarra-900">
+                  Deudas a proveedores
+                </h3>
+              </div>
+              <p className="text-xs text-pizarra-700 mb-4">
+                Total pendiente actual, sin importar el período
               </p>
 
               {deudas.length === 0 ? (
@@ -235,9 +282,12 @@ function Dashboard() {
             transition={{ duration: 0.3, delay: 0.25 }}
             className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-6 mt-6"
           >
-            <h3 className="font-display font-semibold text-pizarra-900 mb-4">
-              Resumen por día
-            </h3>
+            <div className="flex items-center gap-2 mb-4">
+              <CalendarDays size={16} className="text-pizarra-700" />
+              <h3 className="font-display font-semibold text-pizarra-900">
+                Resumen por día
+              </h3>
+            </div>
 
             {resumenDiario.length === 0 ? (
               <p className="text-pizarra-700 text-sm">Sin movimientos en este período.</p>

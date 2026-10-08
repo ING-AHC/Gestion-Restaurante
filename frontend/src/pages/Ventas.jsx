@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { Receipt, CalendarDays } from 'lucide-react';
 import { getVentas, createVenta } from '../services/ventaService';
 import { getProductos } from '../services/productoService';
-import InputMoneda from '../components/InputMoneda';
 
 function Ventas() {
   const [ventas, setVentas] = useState([]);
@@ -11,6 +11,7 @@ function Ventas() {
   const [error, setError] = useState('');
 
   const [tipoVenta, setTipoVenta] = useState('venta');
+  const [fechaVenta, setFechaVenta] = useState(new Date().toISOString().split('T')[0]);
   const [items, setItems] = useState([
     { producto_id: '', cantidad: '1', adicion_descripcion: '', adicion_valor: '' },
   ]);
@@ -70,6 +71,7 @@ function Ventas() {
     try {
       const payload = {
         tipo: tipoVenta,
+        fecha: fechaVenta,
         items: items.map((item) => ({
           producto_id: item.producto_id,
           cantidad: parseInt(item.cantidad),
@@ -82,6 +84,7 @@ function Ventas() {
       await recargarVentas();
 
       setTipoVenta('venta');
+      setFechaVenta(new Date().toISOString().split('T')[0]);
       setItems([{ producto_id: '', cantidad: '1', adicion_descripcion: '', adicion_valor: '' }]);
     } catch (err) {
       setError(err.response?.data?.error || 'Error al registrar la venta');
@@ -89,13 +92,22 @@ function Ventas() {
   };
 
   const ventasFiltradas = ventas.filter((venta) => {
-    const fechaVenta = venta.fecha.split('T')[0];
-    return fechaVenta === fechaFiltro;
+    const fechaVentaItem = venta.fecha.split('T')[0];
+    return fechaVentaItem === fechaFiltro;
   });
+
+  const totalDia = ventasFiltradas
+    .filter((v) => v.tipo === 'venta')
+    .reduce((total, v) => total + parseFloat(v.total), 0);
 
   return (
     <div>
-      <h2 className="font-display text-2xl font-bold text-pizarra-900 mb-6">Ventas</h2>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-pizarra-900/5 flex items-center justify-center">
+          <Receipt size={20} className="text-pizarra-700" />
+        </div>
+        <h2 className="font-display text-2xl font-bold text-pizarra-900">Ventas</h2>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.form
@@ -107,27 +119,40 @@ function Ventas() {
         >
           <h3 className="font-display font-semibold text-pizarra-900">Registrar venta</h3>
 
-          <div>
-            <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">Tipo</label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setTipoVenta('venta')}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  tipoVenta === 'venta' ? 'bg-pizarra-900 text-papel' : 'bg-pizarra-900/5 text-pizarra-700'
-                }`}
-              >
-                Venta
-              </button>
-              <button
-                type="button"
-                onClick={() => setTipoVenta('consumo_interno')}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  tipoVenta === 'consumo_interno' ? 'bg-pizarra-900 text-papel' : 'bg-pizarra-900/5 text-pizarra-700'
-                }`}
-              >
-                Consumo interno
-              </button>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">Tipo</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTipoVenta('venta')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                    tipoVenta === 'venta' ? 'bg-pizarra-900 text-papel' : 'bg-pizarra-900/5 text-pizarra-700'
+                  }`}
+                >
+                  Venta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTipoVenta('consumo_interno')}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                    tipoVenta === 'consumo_interno' ? 'bg-pizarra-900 text-papel' : 'bg-pizarra-900/5 text-pizarra-700'
+                  }`}
+                >
+                  Consumo
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">Fecha</label>
+              <input
+                type="date"
+                value={fechaVenta}
+                onChange={(e) => setFechaVenta(e.target.value)}
+                max={new Date().toISOString().split('T')[0]}
+                className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+              />
             </div>
           </div>
 
@@ -236,27 +261,37 @@ function Ventas() {
         </motion.form>
 
         <div className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 overflow-hidden h-fit">
-          <div className="p-4 border-b border-pizarra-900/10 flex items-center gap-3">
-            <label className="text-sm font-semibold text-pizarra-800">Ver del día:</label>
-            <input
-              type="date"
-              value={fechaFiltro}
-              onChange={(e) => setFechaFiltro(e.target.value)}
-              className="px-3 py-1.5 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
-            />
-            <button
-              type="button"
-              onClick={() => setFechaFiltro(new Date().toISOString().split('T')[0])}
-              className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
-            >
-              Hoy
-            </button>
+          <div className="p-4 border-b border-pizarra-900/10 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <CalendarDays size={15} className="text-pizarra-700/60" />
+              <input
+                type="date"
+                value={fechaFiltro}
+                onChange={(e) => setFechaFiltro(e.target.value)}
+                className="px-3 py-1.5 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setFechaFiltro(new Date().toISOString().split('T')[0])}
+                className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
+              >
+                Hoy
+              </button>
+            </div>
+            {ventasFiltradas.length > 0 && (
+              <span className="text-xs font-semibold text-pizarra-700">
+                Total del día: <span className="text-mostaza-600">${totalDia.toLocaleString()}</span>
+              </span>
+            )}
           </div>
 
           {loading ? (
             <p className="p-6 text-pizarra-700 text-sm">Cargando...</p>
           ) : ventasFiltradas.length === 0 ? (
-            <p className="p-6 text-pizarra-700 text-sm">No hay ventas registradas para este día.</p>
+            <div className="p-10 text-center">
+              <Receipt size={32} className="text-pizarra-900/15 mx-auto mb-2" />
+              <p className="text-pizarra-700 text-sm">No hay ventas registradas para este día.</p>
+            </div>
           ) : (
             <div className="divide-y divide-pizarra-900/5">
               {ventasFiltradas.map((venta) => (

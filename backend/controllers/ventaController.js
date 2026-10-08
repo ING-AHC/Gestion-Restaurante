@@ -1,7 +1,7 @@
 const pool = require('../config/db');
 
 const createVenta = async (req, res) => {
-  const { tipo, items } = req.body;
+  const { tipo, items, fecha } = req.body;
   const userId = req.userId;
   const tipoVenta = tipo || 'venta';
 
@@ -15,8 +15,8 @@ const createVenta = async (req, res) => {
     await client.query('BEGIN');
 
     const ventaResult = await client.query(
-      `INSERT INTO ventas (tipo, user_id) VALUES ($1, $2) RETURNING *`,
-      [tipoVenta, userId]
+      `INSERT INTO ventas (tipo, fecha, user_id) VALUES ($1, COALESCE($2, CURRENT_DATE), $3) RETURNING *`,
+      [tipoVenta, fecha, userId]
     );
     const ventaId = ventaResult.rows[0].id;
 

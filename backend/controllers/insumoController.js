@@ -52,6 +52,33 @@ const getInsumos = async (req, res) => {
   }
 };
 
+const updateInsumo = async (req, res) => {
+  const { id } = req.params;
+  const { cantidad_actual } = req.body;
+  const userId = req.userId;
+
+  try {
+    const insumo = await pool.query(
+      'SELECT * FROM insumos WHERE id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    if (insumo.rows.length === 0) {
+      return res.status(404).json({ error: 'Insumo no encontrado' });
+    }
+
+    const updated = await pool.query(
+      `UPDATE insumos SET cantidad_actual = $1 WHERE id = $2 RETURNING *`,
+      [cantidad_actual, id]
+    );
+
+    res.json(updated.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al actualizar el insumo' });
+  }
+};
+
 const deleteInsumo = async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
@@ -86,4 +113,4 @@ const deleteInsumo = async (req, res) => {
   }
 };
 
-module.exports = { createInsumo, getInsumos, deleteInsumo };
+module.exports = { createInsumo, getInsumos, updateInsumo, deleteInsumo };

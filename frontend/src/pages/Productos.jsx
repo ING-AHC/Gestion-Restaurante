@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Search, UtensilsCrossed } from 'lucide-react';
 import {
   getProductos,
   createProducto,
@@ -36,6 +37,9 @@ function Productos() {
   const [editNombre, setEditNombre] = useState('');
   const [editPrecio, setEditPrecio] = useState('');
   const [editError, setEditError] = useState('');
+
+  const [busqueda, setBusqueda] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState('');
 
   useEffect(() => {
     const loadAll = async () => {
@@ -122,12 +126,13 @@ function Productos() {
       setRecetaError(err.response?.data?.error || 'Error al guardar la receta');
     }
   };
-const abrirModalEditar = (producto) => {
-  setProductoParaEditar(producto);
-  setEditNombre(producto.nombre);
-  setEditPrecio(Math.round(parseFloat(producto.precio)).toString());
-  setEditError('');
-};
+
+  const abrirModalEditar = (producto) => {
+    setProductoParaEditar(producto);
+    setEditNombre(producto.nombre);
+    setEditPrecio(Math.round(parseFloat(producto.precio)).toString());
+    setEditError('');
+  };
 
   const handleGuardarEdicion = async (e) => {
     e.preventDefault();
@@ -148,6 +153,12 @@ const abrirModalEditar = (producto) => {
       setEditError(err.response?.data?.error || 'Error al actualizar el producto');
     }
   };
+
+  const productosFiltrados = productos.filter((producto) => {
+    const coincideBusqueda = producto.nombre.toLowerCase().includes(busqueda.toLowerCase());
+    const coincideTipo = !filtroTipo || producto.tipo === filtroTipo;
+    return coincideBusqueda && coincideTipo;
+  });
 
   return (
     <div>
@@ -239,13 +250,41 @@ const abrirModalEditar = (producto) => {
         </motion.form>
 
         <div className="lg:col-span-2 bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 overflow-hidden">
+          <div className="p-4 border-b border-pizarra-900/10 flex gap-3">
+            <div className="relative flex-1">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-pizarra-700/50" />
+              <input
+                type="text"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Buscar producto..."
+                className="w-full pl-9 pr-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+              />
+            </div>
+            <select
+              value={filtroTipo}
+              onChange={(e) => setFiltroTipo(e.target.value)}
+              className="px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+            >
+              <option value="">Todos los tipos</option>
+              {TIPOS.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+
           {loading ? (
             <p className="p-6 text-pizarra-700 text-sm">Cargando...</p>
-          ) : productos.length === 0 ? (
-            <p className="p-6 text-pizarra-700 text-sm">No hay productos registrados.</p>
+          ) : productosFiltrados.length === 0 ? (
+            <div className="p-10 text-center">
+              <UtensilsCrossed size={32} className="text-pizarra-900/15 mx-auto mb-2" />
+              <p className="text-pizarra-700 text-sm">
+                {productos.length === 0 ? 'No hay productos registrados.' : 'No hay productos que coincidan con el filtro.'}
+              </p>
+            </div>
           ) : (
             <div className="divide-y divide-pizarra-900/5">
-              {productos.map((producto) => (
+              {productosFiltrados.map((producto) => (
                 <div key={producto.id} className="p-4">
                   <div className="flex items-center justify-between">
                     <div>

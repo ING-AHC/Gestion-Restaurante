@@ -13,3 +13,7 @@ export const deleteInsumo = async (id) => {
   const response = await api.delete(`/insumos/${id}`);
   return response.data;
 };
+export const updateInsumo = async (id, data) => {
+  const response = await api.put(`/insumos/${id}`, data);
+  return response.data;
+};

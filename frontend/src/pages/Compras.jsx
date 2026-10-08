@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { ShoppingCart, CalendarDays, Package, FileText } from 'lucide-react';
 import { getCompras, createCompra, marcarComoPagada } from '../services/compraService';
 import { getProveedores } from '../services/proveedorService';
 import { getInsumos } from '../services/insumoService';
@@ -13,7 +14,8 @@ function Compras() {
   const [error, setError] = useState('');
 
   const [proveedorId, setProveedorId] = useState('');
-  const [estadoPago, setEstadoPago] = useState('pendiente');
+  const [estadoPago, setEstadoPago] = useState('pagado');
+  const [fechaCompra, setFechaCompra] = useState(new Date().toISOString().split('T')[0]);
   const [items, setItems] = useState([
     { esInsumo: true, insumo_id: '', descripcion: '', cantidad: '', valor_unitario: '' },
   ]);
@@ -79,6 +81,7 @@ function Compras() {
       await createCompra({
         proveedor_id: proveedorId,
         estado_pago: estadoPago,
+        fecha: fechaCompra,
         items: items.map((item) => ({
           insumo_id: item.esInsumo ? item.insumo_id : null,
           descripcion: item.esInsumo ? null : item.descripcion,
@@ -91,7 +94,8 @@ function Compras() {
       setCompras(comprasActualizadas);
 
       setProveedorId('');
-      setEstadoPago('pendiente');
+setEstadoPago('pagado');
+setFechaCompra(new Date().toISOString().split('T')[0]);
       setItems([{ esInsumo: true, insumo_id: '', descripcion: '', cantidad: '', valor_unitario: '' }]);
     } catch (err) {
       setError(err.response?.data?.error || 'Error al registrar la compra');
@@ -108,13 +112,20 @@ function Compras() {
   };
 
   const comprasFiltradas = compras.filter((compra) => {
-    const fechaCompra = compra.fecha.split('T')[0];
-    return fechaCompra === fechaFiltro;
+    const fechaCompraItem = compra.fecha.split('T')[0];
+    return fechaCompraItem === fechaFiltro;
   });
+
+  const totalDia = comprasFiltradas.reduce((total, c) => total + parseFloat(c.monto_total), 0);
 
   return (
     <div>
-      <h2 className="font-display text-2xl font-bold text-pizarra-900 mb-6">Compras</h2>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-pizarra-900/5 flex items-center justify-center">
+          <ShoppingCart size={20} className="text-pizarra-700" />
+        </div>
+        <h2 className="font-display text-2xl font-bold text-pizarra-900">Compras</h2>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.form
@@ -126,35 +137,66 @@ function Compras() {
         >
           <h3 className="font-display font-semibold text-pizarra-900">Nueva compra</h3>
 
-          <div>
-            <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
-              Proveedor
-            </label>
-            <select
-              value={proveedorId}
-              onChange={(e) => setProveedorId(e.target.value)}
-              required
-              className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
-            >
-              <option value="">Selecciona...</option>
-              {proveedores.map((p) => (
-                <option key={p.id} value={p.id}>{p.nombre}</option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
+                Proveedor
+              </label>
+              <select
+                value={proveedorId}
+                onChange={(e) => setProveedorId(e.target.value)}
+                required
+                className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+              >
+                <option value="">Selecciona...</option>
+                {proveedores.map((p) => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
+                Fecha
+              </label>
+              <input
+                type="date"
+                value={fechaCompra}
+                onChange={(e) => setFechaCompra(e.target.value)}
+                max={new Date().toISOString().split('T')[0]}
+                className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+              />
+            </div>
           </div>
 
           <div>
             <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
               Estado de pago
             </label>
-            <select
-              value={estadoPago}
-              onChange={(e) => setEstadoPago(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
-            >
-              <option value="pendiente">Pendiente</option>
-              <option value="pagado">Pagado</option>
-            </select>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEstadoPago('pendiente')}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  estadoPago === 'pendiente'
+                    ? 'bg-terracota-500 text-white'
+                    : 'bg-pizarra-900/5 text-pizarra-700'
+                }`}
+              >
+                Pendiente
+              </button>
+              <button
+                type="button"
+                onClick={() => setEstadoPago('pagado')}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  estadoPago === 'pagado'
+                    ? 'bg-pizarra-900 text-papel'
+                    : 'bg-pizarra-900/5 text-pizarra-700'
+                }`}
+              >
+                Pagado
+              </button>
+            </div>
           </div>
 
           <div className="border-t border-pizarra-900/10 pt-4">
@@ -178,19 +220,21 @@ function Compras() {
                     <button
                       type="button"
                       onClick={() => toggleTipoItem(index, true)}
-                      className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                         item.esInsumo ? 'bg-pizarra-900 text-papel' : 'bg-pizarra-900/5 text-pizarra-700'
                       }`}
                     >
+                      <Package size={13} />
                       Insumo
                     </button>
                     <button
                       type="button"
                       onClick={() => toggleTipoItem(index, false)}
-                      className={`flex-1 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                         !item.esInsumo ? 'bg-pizarra-900 text-papel' : 'bg-pizarra-900/5 text-pizarra-700'
                       }`}
                     >
+                      <FileText size={13} />
                       Gasto general
                     </button>
                     {items.length > 1 && (
@@ -272,27 +316,37 @@ function Compras() {
         </motion.form>
 
         <div className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 overflow-hidden h-fit">
-          <div className="p-4 border-b border-pizarra-900/10 flex items-center gap-3">
-            <label className="text-sm font-semibold text-pizarra-800">Ver del día:</label>
-            <input
-              type="date"
-              value={fechaFiltro}
-              onChange={(e) => setFechaFiltro(e.target.value)}
-              className="px-3 py-1.5 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
-            />
-            <button
-              type="button"
-              onClick={() => setFechaFiltro(new Date().toISOString().split('T')[0])}
-              className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
-            >
-              Hoy
-            </button>
+          <div className="p-4 border-b border-pizarra-900/10 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2">
+              <CalendarDays size={15} className="text-pizarra-700/60" />
+              <input
+                type="date"
+                value={fechaFiltro}
+                onChange={(e) => setFechaFiltro(e.target.value)}
+                className="px-3 py-1.5 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setFechaFiltro(new Date().toISOString().split('T')[0])}
+                className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
+              >
+                Hoy
+              </button>
+            </div>
+            {comprasFiltradas.length > 0 && (
+              <span className="text-xs font-semibold text-pizarra-700">
+                Total del día: <span className="text-pizarra-900">${totalDia.toLocaleString()}</span>
+              </span>
+            )}
           </div>
 
           {loading ? (
             <p className="p-6 text-pizarra-700 text-sm">Cargando...</p>
           ) : comprasFiltradas.length === 0 ? (
-            <p className="p-6 text-pizarra-700 text-sm">No hay compras registradas para este día.</p>
+            <div className="p-10 text-center">
+              <ShoppingCart size={32} className="text-pizarra-900/15 mx-auto mb-2" />
+              <p className="text-pizarra-700 text-sm">No hay compras registradas para este día.</p>
+            </div>
           ) : (
             <div className="divide-y divide-pizarra-900/5">
               {comprasFiltradas.map((compra) => (
