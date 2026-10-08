@@ -1,10 +1,19 @@
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 const pool = require('./config/db');
 
+if (!process.env.JWT_SECRET) {
+  console.error('Falta la variable JWT_SECRET');
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+// Railway pone un proxy delante del servidor
+app.set('trust proxy', 1);
 
 // En producción solo acepta peticiones del frontend; si no hay variable, queda abierto
 app.use(
@@ -14,8 +23,17 @@ app.use(
 );
 app.use(express.json());
 
+// Máximo 20 intentos de login o registro por IP cada 15 minutos
+const limiteAuth = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos, espera unos minutos e inténtalo de nuevo' },
+});
+
 const authRoutes = require('./routes/authRoutes');
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', limiteAuth, authRoutes);
 const insumoRoutes = require('./routes/insumoRoutes');
 app.use('/api/insumos', insumoRoutes);
 const proveedorRoutes = require('./routes/proveedorRoutes');
