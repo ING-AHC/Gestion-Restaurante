@@ -5,8 +5,15 @@ const createVenta = async (req, res) => {
   const userId = req.userId;
   const tipoVenta = tipo || 'venta';
 
-  if (!items || items.length === 0) {
+  if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Debes incluir al menos un producto en la venta' });
+  }
+
+  for (const item of items) {
+    const cantidad = item.cantidad === undefined ? 1 : Number(item.cantidad);
+    if (!Number.isInteger(Number(item.producto_id)) || !Number.isFinite(cantidad) || cantidad <= 0) {
+      return res.status(400).json({ error: 'Producto o cantidad no válidos en la venta' });
+    }
   }
 
   const client = await pool.connect();
@@ -32,7 +39,7 @@ const createVenta = async (req, res) => {
       }
 
       const producto = productoResult.rows[0];
-      const cantidadVendida = item.cantidad || 1;
+      const cantidadVendida = item.cantidad === undefined ? 1 : Number(item.cantidad);
 
       await client.query(
         `INSERT INTO venta_detalle (venta_id, producto_id, cantidad, precio_unitario, adicion_descripcion, adicion_valor)
@@ -56,14 +63,14 @@ const createVenta = async (req, res) => {
         for (const receta_item of receta.rows) {
           const cantidadADescontar = Math.round((receta_item.cantidad_usada * cantidadVendida) * 100) / 100;
           await client.query(
-            `UPDATE insumos SET cantidad_actual = cantidad_actual - $1 WHERE id = $2`,
-            [cantidadADescontar, receta_item.insumo_id]
+            `UPDATE insumos SET cantidad_actual = cantidad_actual - $1 WHERE id = $2 AND user_id = $3`,
+            [cantidadADescontar, receta_item.insumo_id, userId]
           );
         }
       } else if (producto.tipo === 'bebida') {
         await client.query(
-          `UPDATE insumos SET cantidad_actual = cantidad_actual - $1 WHERE id = $2`,
-          [cantidadVendida, producto.insumo_id]
+          `UPDATE insumos SET cantidad_actual = cantidad_actual - $1 WHERE id = $2 AND user_id = $3`,
+          [cantidadVendida, producto.insumo_id, userId]
         );
       }
     }

@@ -15,8 +15,19 @@ const createProducto = async (req, res) => {
       return res.status(400).json({ error: 'El tipo debe ser: especial, rapida, ejecutivo o bebida' });
     }
 
-    if (tipo === 'bebida' && !insumo_id) {
-      return res.status(400).json({ error: 'Las bebidas deben estar ligadas a un insumo' });
+    if (tipo === 'bebida') {
+      if (!insumo_id) {
+        return res.status(400).json({ error: 'Las bebidas deben estar ligadas a un insumo' });
+      }
+
+      const insumoCheck = await pool.query(
+        'SELECT id FROM insumos WHERE id = $1 AND user_id = $2',
+        [insumo_id, userId]
+      );
+
+      if (insumoCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Insumo no encontrado' });
+      }
     }
 
     const newProducto = await pool.query(
@@ -65,28 +76,24 @@ const getProductos = async (req, res) => {
     res.status(500).json({ error: 'Error en el servidor' });
   }
 };
+
 const updateProducto = async (req, res) => {
   const { id } = req.params;
   const { nombre, precio } = req.body;
   const userId = req.userId;
 
   try {
-    const producto = await pool.query(
-      'SELECT * FROM productos WHERE id = $1 AND user_id = $2',
-      [id, userId]
-    );
-
-    if (producto.rows.length === 0) {
-      return res.status(404).json({ error: 'Producto no encontrado' });
-    }
-
     const updated = await pool.query(
       `UPDATE productos
        SET nombre = COALESCE($1, nombre), precio = COALESCE($2, precio)
-       WHERE id = $3
+       WHERE id = $3 AND user_id = $4
        RETURNING *`,
-      [nombre, precio, id]
+      [nombre, precio, id, userId]
     );
+
+    if (updated.rows.length === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
 
     res.json(updated.rows[0]);
   } catch (error) {
@@ -94,13 +101,23 @@ const updateProducto = async (req, res) => {
     res.status(500).json({ error: 'Error al actualizar el producto' });
   }
 };
+
 const asignarInsumos = async (req, res) => {
   const { producto_id } = req.params;
   const { insumos } = req.body;
   const userId = req.userId;
 
-  if (!insumos || insumos.length === 0) {
+  if (!Array.isArray(insumos) || insumos.length === 0) {
     return res.status(400).json({ error: 'Debes incluir al menos un insumo' });
+  }
+
+  const ids = [...new Set(insumos.map((i) => Number(i.insumo_id)))];
+  const datosValidos =
+    ids.every((n) => Number.isInteger(n)) &&
+    insumos.every((i) => Number(i.cantidad_usada) > 0);
+
+  if (!datosValidos) {
+    return res.status(400).json({ error: 'Insumos o cantidades no válidos' });
   }
 
   const client = await pool.connect();
@@ -109,13 +126,23 @@ const asignarInsumos = async (req, res) => {
     await client.query('BEGIN');
 
     const productoCheck = await client.query(
-      'SELECT * FROM productos WHERE id = $1 AND user_id = $2',
+      'SELECT id FROM productos WHERE id = $1 AND user_id = $2',
       [producto_id, userId]
     );
 
     if (productoCheck.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    const insumosCheck = await client.query(
+      'SELECT id FROM insumos WHERE id = ANY($1::int[]) AND user_id = $2',
+      [ids, userId]
+    );
+
+    if (insumosCheck.rows.length !== ids.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Insumo no encontrado' });
     }
 
     for (const item of insumos) {
@@ -143,16 +170,14 @@ const deleteProducto = async (req, res) => {
   const userId = req.userId;
 
   try {
-    const producto = await pool.query(
-      'SELECT * FROM productos WHERE id = $1 AND user_id = $2',
+    const deleted = await pool.query(
+      'DELETE FROM productos WHERE id = $1 AND user_id = $2 RETURNING id',
       [id, userId]
     );
 
-    if (producto.rows.length === 0) {
+    if (deleted.rows.length === 0) {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
-
-    await pool.query('DELETE FROM productos WHERE id = $1', [id]);
 
     res.json({ message: 'Producto eliminado correctamente' });
   } catch (error) {
