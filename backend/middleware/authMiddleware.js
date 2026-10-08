@@ -10,8 +10,16 @@ const protect = (req, res, next) => {
   const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.id;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ['HS256'],
+    });
+
+    const userId = Number(decoded.id);
+    if (!Number.isInteger(userId)) {
+      return res.status(401).json({ error: 'Token inválido o expirado' });
+    }
+
+    req.userId = userId;
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Token inválido o expirado' });
