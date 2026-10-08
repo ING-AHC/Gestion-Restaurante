@@ -1,4 +1,4 @@
-    const pool = require('../config/db');
+const pool = require('../config/db');
 
 const createRendimiento = async (req, res) => {
   const { insumo_id, porciones_por_unidad } = req.body;
@@ -9,10 +9,17 @@ const createRendimiento = async (req, res) => {
       return res.status(400).json({ error: 'insumo_id y porciones_por_unidad son obligatorios' });
     }
 
+    const insumoId = Number(insumo_id);
+    const porciones = Number(porciones_por_unidad);
+
+    if (!Number.isInteger(insumoId) || !Number.isFinite(porciones) || porciones <= 0) {
+      return res.status(400).json({ error: 'Insumo o porciones no válidos' });
+    }
+
     // Verificamos que el insumo exista y sea del usuario logueado
     const insumoCheck = await pool.query(
-      'SELECT * FROM insumos WHERE id = $1 AND user_id = $2',
-      [insumo_id, userId]
+      'SELECT id FROM insumos WHERE id = $1 AND user_id = $2',
+      [insumoId, userId]
     );
 
     if (insumoCheck.rows.length === 0) {
@@ -23,7 +30,7 @@ const createRendimiento = async (req, res) => {
       `INSERT INTO rendimientos (insumo_id, porciones_por_unidad)
        VALUES ($1, $2)
        RETURNING *`,
-      [insumo_id, porciones_por_unidad]
+      [insumoId, porciones]
     );
 
     res.status(201).json(newRendimiento.rows[0]);
