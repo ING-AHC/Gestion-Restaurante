@@ -1,46 +1,59 @@
 const pool = require('../config/db');
 
+// Valida mes y año; devuelve null si no vienen, o un objeto con los dos números
+const leerPeriodo = (query) => {
+  const { mes, anio } = query;
+  if (!mes || !anio) return null;
+
+  const m = Number(mes);
+  const a = Number(anio);
+
+  if (!Number.isInteger(m) || m < 1 || m > 12 || !Number.isInteger(a) || a < 2000 || a > 2100) {
+    return 'invalido';
+  }
+
+  return { mes: m, anio: a };
+};
+
 const getResumenFinanciero = async (req, res) => {
   const userId = req.userId;
-  const { mes, anio } = req.query;
+  const periodo = leerPeriodo(req.query);
+
+  if (periodo === 'invalido') {
+    return res.status(400).json({ error: 'Mes o año no válidos' });
+  }
 
   try {
-    let filtroFechaVentas = '';
-    let paramsVentas = [userId];
+    const filtroVentas = periodo
+      ? 'AND EXTRACT(MONTH FROM v.fecha) = $2 AND EXTRACT(YEAR FROM v.fecha) = $3'
+      : '';
+    const paramsVentas = periodo ? [userId, periodo.mes, periodo.anio] : [userId];
 
-    if (mes && anio) {
-      filtroFechaVentas = 'AND EXTRACT(MONTH FROM v.fecha) = $2 AND EXTRACT(YEAR FROM v.fecha) = $3';
-      paramsVentas = [userId, mes, anio];
-    }
+    const filtroCompras = periodo
+      ? 'AND EXTRACT(MONTH FROM fecha) = $2 AND EXTRACT(YEAR FROM fecha) = $3'
+      : '';
+    const paramsCompras = periodo ? [userId, periodo.mes, periodo.anio] : [userId];
 
     const ventasResult = await pool.query(
-      `SELECT COALESCE(SUM(vd.cantidad * vd.precio_unitario), 0) AS total
+      `SELECT COALESCE(SUM(vd.cantidad * vd.precio_unitario + COALESCE(vd.adicion_valor, 0)), 0) AS total
        FROM ventas v
        JOIN venta_detalle vd ON vd.venta_id = v.id
-       WHERE v.user_id = $1 AND v.tipo = 'venta' ${filtroFechaVentas}`,
+       WHERE v.user_id = $1 AND v.tipo = 'venta' ${filtroVentas}`,
       paramsVentas
     );
 
     const consumoInternoResult = await pool.query(
-      `SELECT COALESCE(SUM(vd.cantidad * vd.precio_unitario), 0) AS total
+      `SELECT COALESCE(SUM(vd.cantidad * vd.precio_unitario + COALESCE(vd.adicion_valor, 0)), 0) AS total
        FROM ventas v
        JOIN venta_detalle vd ON vd.venta_id = v.id
-       WHERE v.user_id = $1 AND v.tipo = 'consumo_interno' ${filtroFechaVentas}`,
+       WHERE v.user_id = $1 AND v.tipo = 'consumo_interno' ${filtroVentas}`,
       paramsVentas
     );
-
-    let filtroFechaCompras = '';
-    let paramsCompras = [userId];
-
-    if (mes && anio) {
-      filtroFechaCompras = 'AND EXTRACT(MONTH FROM fecha) = $2 AND EXTRACT(YEAR FROM fecha) = $3';
-      paramsCompras = [userId, mes, anio];
-    }
 
     const comprasResult = await pool.query(
       `SELECT COALESCE(SUM(monto_total), 0) AS total
        FROM compras
-       WHERE user_id = $1 ${filtroFechaCompras}`,
+       WHERE user_id = $1 ${filtroCompras}`,
       paramsCompras
     );
 
@@ -86,16 +99,17 @@ const getDeudasProveedores = async (req, res) => {
 
 const getGastosPorCategoria = async (req, res) => {
   const userId = req.userId;
-  const { mes, anio } = req.query;
+  const periodo = leerPeriodo(req.query);
+
+  if (periodo === 'invalido') {
+    return res.status(400).json({ error: 'Mes o año no válidos' });
+  }
 
   try {
-    let filtroFecha = '';
-    let params = [userId];
-
-    if (mes && anio) {
-      filtroFecha = 'AND EXTRACT(MONTH FROM c.fecha) = $2 AND EXTRACT(YEAR FROM c.fecha) = $3';
-      params = [userId, mes, anio];
-    }
+    const filtroFecha = periodo
+      ? 'AND EXTRACT(MONTH FROM c.fecha) = $2 AND EXTRACT(YEAR FROM c.fecha) = $3'
+      : '';
+    const params = periodo ? [userId, periodo.mes, periodo.anio] : [userId];
 
     const gastos = await pool.query(
       `SELECT
@@ -121,22 +135,26 @@ const getGastosPorCategoria = async (req, res) => {
 
 const getResumenDiario = async (req, res) => {
   const userId = req.userId;
-  const { mes, anio } = req.query;
+  const periodo = leerPeriodo(req.query);
+
+  if (periodo === 'invalido') {
+    return res.status(400).json({ error: 'Mes o año no válidos' });
+  }
 
   try {
-    let filtroFecha = '';
-    let params = [userId];
-
-    if (mes && anio) {
-      filtroFecha = 'AND EXTRACT(MONTH FROM fecha) = $2 AND EXTRACT(YEAR FROM fecha) = $3';
-      params = [userId, mes, anio];
-    }
+    const filtroVentas = periodo
+      ? 'AND EXTRACT(MONTH FROM v.fecha) = $2 AND EXTRACT(YEAR FROM v.fecha) = $3'
+      : '';
+    const filtroCompras = periodo
+      ? 'AND EXTRACT(MONTH FROM fecha) = $2 AND EXTRACT(YEAR FROM fecha) = $3'
+      : '';
+    const params = periodo ? [userId, periodo.mes, periodo.anio] : [userId];
 
     const ventasPorDia = await pool.query(
-      `SELECT v.fecha, SUM(vd.cantidad * vd.precio_unitario) AS total
+      `SELECT v.fecha, SUM(vd.cantidad * vd.precio_unitario + COALESCE(vd.adicion_valor, 0)) AS total
        FROM ventas v
        JOIN venta_detalle vd ON vd.venta_id = v.id
-       WHERE v.user_id = $1 AND v.tipo = 'venta' ${filtroFecha.replace('fecha', 'v.fecha')}
+       WHERE v.user_id = $1 AND v.tipo = 'venta' ${filtroVentas}
        GROUP BY v.fecha`,
       params
     );
@@ -144,7 +162,7 @@ const getResumenDiario = async (req, res) => {
     const comprasPorDia = await pool.query(
       `SELECT fecha, SUM(monto_total) AS total
        FROM compras
-       WHERE user_id = $1 ${filtroFecha}
+       WHERE user_id = $1 ${filtroCompras}
        GROUP BY fecha`,
       params
     );
