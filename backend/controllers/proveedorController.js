@@ -5,24 +5,24 @@ const createProveedores = async (req, res) => {
   const userId = req.userId;
 
   try {
-    if (!nombre) {
+    if (!nombre || !String(nombre).trim()) {
       return res.status(400).json({ error: 'El nombre es obligatorio' });
     }
 
     const existente = await pool.query(
-      'SELECT * FROM proveedores WHERE LOWER(nombre) = LOWER($1) AND user_id = $2',
-      [nombre, userId]
+      'SELECT id FROM proveedores WHERE LOWER(nombre) = LOWER($1) AND user_id = $2',
+      [nombre.trim(), userId]
     );
 
     if (existente.rows.length > 0) {
-      return res.status(400).json({ error: `Ya existe un proveedor llamado "${nombre}"` });
+      return res.status(400).json({ error: `Ya existe un proveedor llamado "${nombre.trim()}"` });
     }
 
     const newProveedores = await pool.query(
       `INSERT INTO proveedores (nombre, telefono, user_id)
        VALUES ($1, $2, $3)
        RETURNING *`,
-      [nombre, telefono, userId]
+      [nombre.trim(), telefono || null, userId]
     );
 
     res.status(201).json(newProveedores.rows[0]);
@@ -52,9 +52,13 @@ const deleteProveedor = async (req, res) => {
   const { id } = req.params;
   const userId = req.userId;
 
+  if (!Number.isInteger(Number(id))) {
+    return res.status(400).json({ error: 'Identificador no válido' });
+  }
+
   try {
     const proveedor = await pool.query(
-      'SELECT * FROM proveedores WHERE id = $1 AND user_id = $2',
+      'SELECT id FROM proveedores WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
 
@@ -63,7 +67,7 @@ const deleteProveedor = async (req, res) => {
     }
 
     const enUso = await pool.query(
-      'SELECT * FROM compras WHERE proveedor_id = $1',
+      'SELECT id FROM compras WHERE proveedor_id = $1 LIMIT 1',
       [id]
     );
 
@@ -73,7 +77,7 @@ const deleteProveedor = async (req, res) => {
       });
     }
 
-    await pool.query('DELETE FROM proveedores WHERE id = $1', [id]);
+    await pool.query('DELETE FROM proveedores WHERE id = $1 AND user_id = $2', [id, userId]);
 
     res.json({ message: 'Proveedor eliminado correctamente' });
   } catch (error) {
