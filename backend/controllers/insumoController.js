@@ -156,16 +156,21 @@ const deleteInsumo = async (req, res) => {
       });
     }
 
+    const enCompras = await pool.query(
+      'SELECT id FROM compra_detalle WHERE insumo_id = $1 LIMIT 1',
+      [id]
+    );
+
+    if (enCompras.rows.length > 0) {
+      return res.status(400).json({
+        error: 'No se puede eliminar: este insumo tiene compras registradas. Si ya no lo usas, ponle la cantidad en 0',
+      });
+    }
+
     await pool.query('DELETE FROM insumos WHERE id = $1 AND user_id = $2', [id, userId]);
 
     res.json({ message: 'Insumo eliminado correctamente' });
   } catch (error) {
-    // 23503 = violación de clave foránea (el insumo tiene registros asociados)
-    if (error.code === '23503') {
-      return res.status(400).json({
-        error: 'No se puede eliminar: este insumo tiene registros asociados (por ejemplo compras)',
-      });
-    }
     console.error(error);
     res.status(500).json({ error: 'Error al eliminar el insumo' });
   }
