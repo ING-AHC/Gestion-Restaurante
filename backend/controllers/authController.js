@@ -1,79 +1,70 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const pool = require('../config/db');
+const express = require('express');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
+require('dotenv').config();
+const pool = require('./config/db');
 
-const register = async (req, res) => {
-  const { name, email, password } = req.body;
+if (!process.env.JWT_SECRET) {
+  console.error('Falta la variable JWT_SECRET');
+  process.exit(1);
+}
 
+const app = express();
+const PORT = process.env.PORT || 4000;
+
+// Railway pone un proxy delante del servidor
+app.set('trust proxy', 1);
+
+// En producción solo acepta peticiones del frontend; si no hay variable, queda abierto
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || '*',
+  })
+);
+app.use(express.json());
+
+// Máximo 20 intentos de login o registro por IP cada 15 minutos
+const limiteAuth = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos, espera unos minutos e inténtalo de nuevo' },
+});
+
+const authRoutes = require('./routes/authRoutes');
+app.use('/api/auth', limiteAuth, authRoutes);
+const insumoRoutes = require('./routes/insumoRoutes');
+app.use('/api/insumos', insumoRoutes);
+const proveedorRoutes = require('./routes/proveedorRoutes');
+app.use('/api/proveedores', proveedorRoutes);
+const categoriaGastoRoutes = require('./routes/categoriaGastoRoutes');
+app.use('/api/categorias-gasto', categoriaGastoRoutes);
+const compraRoutes = require('./routes/compraRoutes');
+app.use('/api/compras', compraRoutes);
+const productoRoutes = require('./routes/productoRoutes');
+app.use('/api/productos', productoRoutes);
+const rendimientoRoutes = require('./routes/rendimientoRoutes');
+app.use('/api/rendimientos', rendimientoRoutes);
+const ventaRoutes = require('./routes/ventaRoutes');
+app.use('/api/ventas', ventaRoutes);
+const reporteRoutes = require('./routes/reporteRoutes');
+app.use('/api/reportes', reporteRoutes);
+
+app.get('/', (req, res) => {
+  res.json({ message: 'Servidor de Gestión Restaurante funcionando 🚀' });
+});
+
+app.get('/test-db', async (req, res) => {
   try {
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Todos los campos son obligatorios' });
-    }
-
-    const userExists = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-    if (userExists.rows.length > 0) {
-      return res.status(400).json({ error: 'Ese email ya está registrado' });
-    }
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    const newUser = await pool.query(
-      'INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id, name, email',
-      [name, email, hashedPassword]
-    );
-
-    const token = jwt.sign(
-      { id: newUser.rows[0].id },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.status(201).json({
-      user: newUser.rows[0],
-      token,
-    });
+    await pool.query('SELECT NOW()');
+    res.json({ conectado: true });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error en el servidor' });
+    console.error('Error test-db:', error.message);
+    res.status(500).json({ conectado: false });
   }
-};
+});
 
-const login = async (req, res) => {
-  const { email, password } = req.body;
-
-  try {
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email y contraseña son obligatorios' });
-    }
-
-    const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-
-    if (userResult.rows.length === 0) {
-      return res.status(400).json({ error: 'Credenciales inválidas' });
-    }
-
-    const user = userResult.rows[0];
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-      return res.status(400).json({ error: 'Credenciales inválidas' });
-    }
-
-    const token = jwt.sign(
-      { id: user.id },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.json({
-      user: { id: user.id, name: user.name, email: user.email },
-      token,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error en el servidor' });
-  }
-};
-
-module.exports = { register, login };
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
