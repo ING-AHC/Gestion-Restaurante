@@ -68,3 +68,5 @@ app.get('/test-db', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en el puerto ${PORT}`);
 });
+const pedidoRoutes = require('./routes/pedidoRoutes');
+app.use('/api/pedidos', pedidoRoutes);

@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { ErrorNegocio, registrarVenta } = require('../services/ventaService');
 
 const createVenta = async (req, res) => {
   const { tipo, items, fecha } = req.body;
@@ -20,66 +21,15 @@ const createVenta = async (req, res) => {
 
   try {
     await client.query('BEGIN');
-
-    const ventaResult = await client.query(
-      `INSERT INTO ventas (tipo, fecha, user_id) VALUES ($1, COALESCE($2, CURRENT_DATE), $3) RETURNING *`,
-      [tipoVenta, fecha, userId]
-    );
-    const ventaId = ventaResult.rows[0].id;
-
-    for (const item of items) {
-      const productoResult = await client.query(
-        'SELECT * FROM productos WHERE id = $1 AND user_id = $2',
-        [item.producto_id, userId]
-      );
-
-      if (productoResult.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error: `Producto ${item.producto_id} no encontrado` });
-      }
-
-      const producto = productoResult.rows[0];
-      const cantidadVendida = item.cantidad === undefined ? 1 : Number(item.cantidad);
-
-      await client.query(
-        `INSERT INTO venta_detalle (venta_id, producto_id, cantidad, precio_unitario, adicion_descripcion, adicion_valor)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [
-          ventaId,
-          item.producto_id,
-          cantidadVendida,
-          producto.precio,
-          item.adicion_descripcion || null,
-          item.adicion_valor || 0,
-        ]
-      );
-
-      if (producto.tipo === 'especial' || producto.tipo === 'rapida' || producto.tipo === 'ejecutivo') {
-        const receta = await client.query(
-          'SELECT * FROM plato_insumos WHERE producto_id = $1',
-          [item.producto_id]
-        );
-
-        for (const receta_item of receta.rows) {
-          const cantidadADescontar = Math.round((receta_item.cantidad_usada * cantidadVendida) * 100) / 100;
-          await client.query(
-            `UPDATE insumos SET cantidad_actual = cantidad_actual - $1 WHERE id = $2 AND user_id = $3`,
-            [cantidadADescontar, receta_item.insumo_id, userId]
-          );
-        }
-      } else if (producto.tipo === 'bebida') {
-        await client.query(
-          `UPDATE insumos SET cantidad_actual = cantidad_actual - $1 WHERE id = $2 AND user_id = $3`,
-          [cantidadVendida, producto.insumo_id, userId]
-        );
-      }
-    }
-
+    const venta = await registrarVenta(client, userId, { tipo: tipoVenta, fecha, items });
     await client.query('COMMIT');
 
-    res.status(201).json(ventaResult.rows[0]);
+    res.status(201).json(venta);
   } catch (error) {
     await client.query('ROLLBACK');
+    if (error instanceof ErrorNegocio) {
+      return res.status(error.status).json({ error: error.message });
+    }
     console.error(error);
     res.status(500).json({ error: 'Error al registrar la venta' });
   } finally {

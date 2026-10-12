@@ -11,6 +11,10 @@ import Compras from './pages/Compras';
 import Productos from './pages/Productos';
 import Ventas from './pages/Ventas';
 import Rendimientos from './pages/Rendimientos';
+import Pedidos from './pages/Pedidos';
+import Cocina from './pages/Cocina';
+import Caja from './pages/Caja';
+
 function App() {
   return (
     <BrowserRouter>
@@ -28,11 +32,14 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/insumos" element={<Insumos />} />
           <Route path="/proveedores" element={<Proveedores />} />
-<Route path="/categorias-gasto" element={<CategoriasGasto />} />
-<Route path="/compras" element={<Compras />} />
-<Route path="/productos" element={<Productos />} />
-<Route path="/ventas" element={<Ventas />} />
-<Route path="/rendimientos" element={<Rendimientos />} />
+          <Route path="/categorias-gasto" element={<CategoriasGasto />} />
+          <Route path="/compras" element={<Compras />} />
+          <Route path="/productos" element={<Productos />} />
+          <Route path="/ventas" element={<Ventas />} />
+          <Route path="/rendimientos" element={<Rendimientos />} />
+          <Route path="/pedidos" element={<Pedidos />} />
+          <Route path="/cocina" element={<Cocina />} />
+          <Route path="/caja" element={<Caja />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />
