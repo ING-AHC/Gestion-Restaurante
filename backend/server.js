@@ -50,6 +50,8 @@ const ventaRoutes = require('./routes/ventaRoutes');
 app.use('/api/ventas', ventaRoutes);
 const reporteRoutes = require('./routes/reporteRoutes');
 app.use('/api/reportes', reporteRoutes);
+const personalRoutes = require('./routes/personalRoutes');
+app.use('/api/personal', personalRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Servidor de Gestión Restaurante funcionando 🚀' });

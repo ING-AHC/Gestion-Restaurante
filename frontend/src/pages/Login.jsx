@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { loginUser } from '../services/authService';
 import { useAuth } from '../context/AuthContext';
+import { rutaInicial } from '../utils/roles';
 
 function Login() {
   const [email, setEmail] = useState('');
@@ -21,7 +22,7 @@ function Login() {
     try {
       const data = await loginUser(email, password);
       login(data.user, data.token);
-      navigate('/dashboard');
+     navigate(rutaInicial(data.user.rol));
     } catch (err) {
       setError(err.response?.data?.error || 'Error al iniciar sesión');
     } finally {

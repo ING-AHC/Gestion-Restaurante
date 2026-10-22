@@ -4,8 +4,8 @@ const pool = require('../config/db');
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const firmarToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+const firmarToken = (payload, expiresIn = '7d') =>
+  jwt.sign(payload, process.env.JWT_SECRET, { expiresIn });
 
 const register = async (req, res) => {
   const { name, email, password } = req.body;
@@ -42,9 +42,10 @@ const register = async (req, res) => {
       [nombre, correo, hashedPassword]
     );
 
+    const u = newUser.rows[0];
     res.status(201).json({
-      user: newUser.rows[0],
-      token: firmarToken(newUser.rows[0].id),
+      user: { ...u, rol: 'admin' },
+      token: firmarToken({ id: u.id, rol: 'admin' }),
     });
   } catch (error) {
     // 23505 = correo duplicado detectado por la base de datos (registro simultáneo)
@@ -83,10 +84,19 @@ const login = async (req, res) => {
       return res.status(400).json({ error: 'Credenciales inválidas' });
     }
 
-    res.json({
-      user: { id: user.id, name: user.name, email: user.email },
-      token: firmarToken(user.id),
-    });
+    if (!user.activo) {
+      return res.status(403).json({ error: 'Este usuario está desactivado' });
+    }
+
+    const datosUsuario = { id: user.id, name: user.name, email: user.email, rol: user.rol };
+
+    // Empleado: el token apunta al restaurante del dueño (id) y guarda quién es (uid)
+    const token =
+      user.rol === 'admin'
+        ? firmarToken({ id: user.id, rol: 'admin' })
+        : firmarToken({ id: user.owner_id, uid: user.id, rol: user.rol }, '1d');
+
+    res.json({ user: datosUsuario, token });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error en el servidor' });

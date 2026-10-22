@@ -1,0 +1,2 @@
+ALTER TABLE pedidos
+  ADD COLUMN creado_por INTEGER REFERENCES users(id) ON DELETE SET NULL;

@@ -6,6 +6,7 @@ const TODOS_LOS_ESTADOS = ['pendiente', 'en_preparacion', 'listo', 'entregado', 
 
 // Desde qué estados se puede pasar a cada uno por la ruta de estado.
 // "entregado" solo se alcanza confirmando en caja.
+// "listo" significa que el mesero ya entregó el pedido en la mesa y está por cobrar.
 const TRANSICIONES = {
   pendiente: ['en_preparacion', 'listo', 'cancelado'],
   en_preparacion: ['listo', 'cancelado'],
@@ -69,8 +70,8 @@ const createPedido = async (req, res) => {
     }
 
     const pedido = await client.query(
-      `INSERT INTO pedidos (user_id, mesa, notas) VALUES ($1, $2, $3) RETURNING *`,
-      [userId, mesa, notas]
+      `INSERT INTO pedidos (user_id, mesa, notas, creado_por) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [userId, mesa, notas, req.actorId]
     );
 
     for (const l of lineas) {
@@ -90,9 +91,10 @@ const createPedido = async (req, res) => {
   }
 };
 
-// Cocina y caja: lista pedidos (por defecto los activos).
+// Lista pedidos (por defecto los activos). El mesero solo ve los suyos.
 const getPedidos = async (req, res) => {
   const userId = req.userId;
+  const soloDe = req.rol === 'mesero' ? req.actorId : null;
   let estados = ESTADOS_ACTIVOS;
 
   if (req.query.estado) {
@@ -106,6 +108,7 @@ const getPedidos = async (req, res) => {
     const pedidos = await pool.query(
       `SELECT
          p.id, p.mesa, p.estado, p.notas, p.venta_id, p.creado_en,
+         u.name AS mesero,
          COALESCE(
            json_agg(
              json_build_object(
@@ -119,13 +122,16 @@ const getPedidos = async (req, res) => {
            '[]'
          ) AS items
        FROM pedidos p
+       LEFT JOIN users u ON u.id = p.creado_por
        LEFT JOIN pedido_detalle d ON d.pedido_id = p.id
        LEFT JOIN productos pr ON pr.id = d.producto_id
-       WHERE p.user_id = $1 AND p.estado = ANY($2::text[])
-       GROUP BY p.id
+       WHERE p.user_id = $1
+         AND p.estado = ANY($2::text[])
+         AND ($3::int IS NULL OR p.creado_por = $3)
+       GROUP BY p.id, u.name
        ORDER BY p.creado_en ASC
        LIMIT 200`,
-      [userId, estados]
+      [userId, estados, soloDe]
     );
 
     res.json(pedidos.rows);
@@ -135,34 +141,49 @@ const getPedidos = async (req, res) => {
   }
 };
 
-// Cocina: pasa un pedido a en_preparacion, listo o cancelado.
+// Mesero: marca entregado ("listo") o cancela uno suyo pendiente. Caja y admin: cualquier cambio válido.
 const updateEstado = async (req, res) => {
   const userId = req.userId;
   const id = Number(req.params.id);
   const { estado } = req.body;
+  const esMesero = req.rol === 'mesero';
 
   if (!Number.isInteger(id) || id <= 0) {
     return res.status(400).json({ error: 'Pedido no válido' });
   }
 
-  const origenes = Object.keys(TRANSICIONES).filter((o) => TRANSICIONES[o].includes(estado));
+  let origenes = Object.keys(TRANSICIONES).filter((o) => TRANSICIONES[o].includes(estado));
   if (origenes.length === 0) {
     return res.status(400).json({ error: 'Estado no válido. Usa: en_preparacion, listo o cancelado' });
   }
+
+  if (esMesero) {
+    if (!['listo', 'cancelado'].includes(estado)) {
+      return res.status(403).json({ error: 'No tienes permiso para esta acción' });
+    }
+    // El mesero solo cancela lo que aún no ha empezado
+    origenes = estado === 'cancelado'
+      ? ['pendiente']
+      : origenes.filter((o) => ['pendiente', 'en_preparacion'].includes(o));
+  }
+
+  const soloDe = esMesero ? req.actorId : null;
 
   try {
     const result = await pool.query(
       `UPDATE pedidos
        SET estado = $1, actualizado_en = NOW()
        WHERE id = $2 AND user_id = $3 AND estado = ANY($4::text[]) AND venta_id IS NULL
+         AND ($5::int IS NULL OR creado_por = $5)
        RETURNING *`,
-      [estado, id, userId, origenes]
+      [estado, id, userId, origenes, soloDe]
     );
 
     if (result.rows.length === 0) {
       const existe = await pool.query(
-        'SELECT estado FROM pedidos WHERE id = $1 AND user_id = $2',
-        [id, userId]
+        `SELECT estado FROM pedidos
+         WHERE id = $1 AND user_id = $2 AND ($3::int IS NULL OR creado_por = $3)`,
+        [id, userId, soloDe]
       );
       if (existe.rows.length === 0) {
         return res.status(404).json({ error: 'Pedido no encontrado' });

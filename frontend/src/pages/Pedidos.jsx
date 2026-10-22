@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Plus, Minus, Send, MessageSquare } from 'lucide-react';
-import { getProductos, crearPedido, getPedidos } from '../services/pedidoService';
+import { Plus, Minus, Send, MessageSquare, Check, X } from 'lucide-react';
+import { getProductos, crearPedido, getPedidos, cambiarEstado } from '../services/pedidoService';
 
 const ESTADOS = {
-  pendiente: { texto: 'Pendiente', clase: 'bg-pizarra-900/10 text-pizarra-900' },
-  en_preparacion: { texto: 'En preparación', clase: 'bg-mostaza-500/30 text-pizarra-950' },
-  listo: { texto: '¡Listo para servir!', clase: 'bg-green-600 text-white' },
+  pendiente: { texto: 'En cocina', clase: 'bg-pizarra-900/10 text-pizarra-900' },
+  en_preparacion: { texto: 'En cocina', clase: 'bg-mostaza-500/30 text-pizarra-950' },
+  listo: { texto: 'Entregado · por cobrar', clase: 'bg-green-600 text-white' },
 };
 
 export default function Pedidos() {
@@ -27,23 +27,23 @@ export default function Pedidos() {
     getPedidos().then(setActivos).catch(() => {});
   }, []);
 
-  // Polling cada 4 s para ver cuándo queda listo un pedido
+  // Polling cada 4 s para mantener al día el estado de mis pedidos
   useEffect(() => {
     cargarActivos();
     const id = setInterval(cargarActivos, 4000);
     return () => clearInterval(id);
   }, [cargarActivos]);
 
-  const tipos = useMemo(() => [...new Set(productos.map(p => p.tipo))], [productos]);
+  const tipos = useMemo(() => [...new Set(productos.map((p) => p.tipo))], [productos]);
   useEffect(() => {
     if (!tipoActivo && tipos.length) setTipoActivo(tipos[0]);
   }, [tipos, tipoActivo]);
 
-  const visibles = productos.filter(p => p.tipo === tipoActivo);
+  const visibles = productos.filter((p) => p.tipo === tipoActivo);
   const totalItems = Object.values(carrito).reduce((s, i) => s + i.cantidad, 0);
 
   const cambiar = (id, delta) =>
-    setCarrito(prev => {
+    setCarrito((prev) => {
       const actual = prev[id] || { cantidad: 0, nota: '' };
       const cantidad = Math.max(0, Math.min(100, actual.cantidad + delta));
       const sig = { ...prev };
@@ -53,10 +53,11 @@ export default function Pedidos() {
     });
 
   const ponerNota = (id, nota) =>
-    setCarrito(prev => ({ ...prev, [id]: { ...prev[id], nota } }));
+    setCarrito((prev) => ({ ...prev, [id]: { ...prev[id], nota } }));
 
   const enviar = async () => {
-    setError(''); setOk('');
+    setError('');
+    setOk('');
     if (!mesa.trim()) return setError('Escribe la mesa');
     if (totalItems === 0) return setError('Agrega al menos un producto');
     setEnviando(true);
@@ -70,7 +71,9 @@ export default function Pedidos() {
           nota: i.nota?.trim() || null,
         })),
       });
-      setCarrito({}); setMesa(''); setNotas('');
+      setCarrito({});
+      setMesa('');
+      setNotas('');
       setOk('Pedido enviado a cocina');
       cargarActivos();
     } catch (e) {
@@ -80,21 +83,68 @@ export default function Pedidos() {
     }
   };
 
+  const marcarEntregado = async (p) => {
+    if (!window.confirm(`¿Ya entregaste el pedido de la mesa ${p.mesa}?`)) return;
+    setError('');
+    try {
+      await cambiarEstado(p.id, 'listo');
+    } catch (e) {
+      setError(e.response?.data?.error || 'No se pudo actualizar el pedido');
+    }
+    cargarActivos();
+  };
+
+  const cancelar = async (p) => {
+    if (!window.confirm(`¿Cancelar el pedido de la mesa ${p.mesa}?`)) return;
+    setError('');
+    try {
+      await cambiarEstado(p.id, 'cancelado');
+    } catch (e) {
+      setError(e.response?.data?.error || 'No se pudo cancelar el pedido');
+    }
+    cargarActivos();
+  };
+
   return (
     <div className="max-w-xl mx-auto space-y-4 pb-28">
       <h1 className="font-display text-2xl text-pizarra-950">Nuevo pedido</h1>
 
-      {/* Pedidos en curso */}
+      {/* Mis pedidos en curso */}
       {activos.length > 0 && (
-        <div className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-4 space-y-2">
+        <div className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-4 space-y-3">
           <p className="text-sm font-medium text-pizarra-900/70">Pedidos en curso</p>
-          {activos.map(p => {
+          {activos.map((p) => {
             const e = ESTADOS[p.estado];
             if (!e) return null;
+            const enCocina = p.estado === 'pendiente' || p.estado === 'en_preparacion';
             return (
-              <div key={p.id} className="flex items-center justify-between gap-2">
-                <span className="font-medium">Mesa {p.mesa}</span>
-                <span className={`text-xs px-2 py-1 rounded-full ${e.clase}`}>{e.texto}</span>
+              <div key={p.id} className="border-t border-pizarra-900/10 pt-3 first:border-0 first:pt-0 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold">Mesa {p.mesa}</span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${e.clase}`}>{e.texto}</span>
+                </div>
+                <p className="text-sm text-pizarra-900/70">
+                  {p.items.map((it) => `${it.cantidad}× ${it.producto_nombre}`).join(', ')}
+                </p>
+                {enCocina && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => marcarEntregado(p)}
+                      className="flex-1 flex items-center justify-center gap-2 bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 font-semibold rounded-xl py-3"
+                    >
+                      <Check size={18} /> Entregado
+                    </button>
+                    {p.estado === 'pendiente' && (
+                      <button
+                        onClick={() => cancelar(p)}
+                        title="Cancelar pedido"
+                        className="px-4 rounded-xl border border-pizarra-900/20 text-pizarra-900/60"
+                      >
+                        <X size={18} />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -104,7 +154,7 @@ export default function Pedidos() {
       {/* Mesa */}
       <input
         value={mesa}
-        onChange={e => setMesa(e.target.value)}
+        onChange={(e) => setMesa(e.target.value)}
         maxLength={30}
         placeholder="Mesa (ej: 4, Barra, Domicilio)"
         className="w-full rounded-xl border border-pizarra-900/20 bg-white px-4 py-3 text-lg"
@@ -112,7 +162,7 @@ export default function Pedidos() {
 
       {/* Tipos */}
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {tipos.map(t => (
+        {tipos.map((t) => (
           <button
             key={t}
             onClick={() => setTipoActivo(t)}
@@ -129,7 +179,7 @@ export default function Pedidos() {
 
       {/* Productos */}
       <div className="space-y-2">
-        {visibles.map(p => {
+        {visibles.map((p) => {
           const item = carrito[p.id];
           return (
             <div key={p.id} className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-4">
@@ -143,13 +193,19 @@ export default function Pedidos() {
                 <div className="flex items-center gap-3">
                   {item && (
                     <>
-                      <button onClick={() => cambiar(p.id, -1)} className="w-10 h-10 rounded-full border border-pizarra-900/20 flex items-center justify-center">
+                      <button
+                        onClick={() => cambiar(p.id, -1)}
+                        className="w-10 h-10 rounded-full border border-pizarra-900/20 flex items-center justify-center"
+                      >
                         <Minus size={18} />
                       </button>
                       <span className="w-6 text-center font-semibold">{item.cantidad}</span>
                     </>
                   )}
-                  <button onClick={() => cambiar(p.id, 1)} className="w-10 h-10 rounded-full bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 flex items-center justify-center">
+                  <button
+                    onClick={() => cambiar(p.id, 1)}
+                    className="w-10 h-10 rounded-full bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 flex items-center justify-center"
+                  >
                     <Plus size={18} />
                   </button>
                 </div>
@@ -159,7 +215,7 @@ export default function Pedidos() {
                   <MessageSquare size={16} className="text-pizarra-900/50 shrink-0" />
                   <input
                     value={item.nota || ''}
-                    onChange={e => ponerNota(p.id, e.target.value)}
+                    onChange={(e) => ponerNota(p.id, e.target.value)}
                     placeholder="Nota (sin cebolla, bien asado…)"
                     className="w-full text-sm rounded-lg border border-pizarra-900/15 bg-white px-3 py-2"
                   />
@@ -172,7 +228,7 @@ export default function Pedidos() {
 
       <textarea
         value={notas}
-        onChange={e => setNotas(e.target.value)}
+        onChange={(e) => setNotas(e.target.value)}
         rows={2}
         placeholder="Nota general del pedido (opcional)"
         className="w-full rounded-xl border border-pizarra-900/20 bg-white px-4 py-3 text-sm"
