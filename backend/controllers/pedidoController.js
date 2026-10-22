@@ -56,8 +56,13 @@ const createPedido = async (req, res) => {
       return res.status(400).json({ error: 'Sopa no válida en el pedido' });
     }
 
+    const principioId = item.principio_id ? Number(item.principio_id) : null;
+    if (principioId !== null && (!Number.isInteger(principioId) || principioId <= 0)) {
+      return res.status(400).json({ error: 'Principio no válido en el pedido' });
+    }
+
     const nota = item.nota ? String(item.nota).trim().slice(0, 255) : null;
-    lineas.push({ productoId, cantidad, nota, sopaId, sinSopa: item.sin_sopa === true });
+    lineas.push({ productoId, cantidad, nota, sopaId, principioId, sinSopa: item.sin_sopa === true });
   }
 
   const client = await pool.connect();
@@ -83,11 +88,18 @@ const createPedido = async (req, res) => {
     if (sopaIds.length > 0) {
       const sopas = await client.query(
         `SELECT id FROM productos
-         WHERE id = ANY($1::int[]) AND user_id = $2 AND es_sopa AND disponible_hoy`,
+         WHERE id = ANY($1::int[]) AND user_id = $2 AND tipo = 'sopa' AND disponible_hoy`,
         [sopaIds, userId]
       );
       sopasValidas = new Set(sopas.rows.map((s) => s.id));
     }
+
+    // Principios activos hoy: si hay, cada ejecutivo debe llevar uno
+    const principios = await client.query(
+      `SELECT id FROM productos WHERE user_id = $1 AND tipo = 'principio' AND disponible_hoy`,
+      [userId]
+    );
+    const principiosHoy = new Set(principios.rows.map((r) => r.id));
 
     for (const l of lineas) {
       const p = porId.get(l.productoId);
@@ -105,8 +117,17 @@ const createPedido = async (req, res) => {
         } else if (!l.sopaId || !sopasValidas.has(l.sopaId)) {
           throw new ErrorNegocio(400, `Escoge la sopa de "${p.nombre}" o marca "sin sopa"`);
         }
+
+        if (principiosHoy.size > 0) {
+          if (!l.principioId || !principiosHoy.has(l.principioId)) {
+            throw new ErrorNegocio(400, `Escoge el principio de "${p.nombre}"`);
+          }
+        } else {
+          l.principioId = null;
+        }
       } else {
         l.sopaId = null;
+        l.principioId = null;
         l.sinSopa = false;
       }
     }
@@ -118,9 +139,9 @@ const createPedido = async (req, res) => {
 
     for (const l of lineas) {
       await client.query(
-        `INSERT INTO pedido_detalle (pedido_id, producto_id, cantidad, nota, sopa_id, sin_sopa)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [pedido.rows[0].id, l.productoId, l.cantidad, l.nota, l.sopaId, l.sinSopa]
+        `INSERT INTO pedido_detalle (pedido_id, producto_id, cantidad, nota, sopa_id, principio_id, sin_sopa)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [pedido.rows[0].id, l.productoId, l.cantidad, l.nota, l.sopaId, l.principioId, l.sinSopa]
       );
     }
 
@@ -160,6 +181,7 @@ const getPedidos = async (req, res) => {
                'nota', d.nota,
                'precio', pr.precio,
                'sopa_nombre', sp.nombre,
+               'principio_nombre', pp.nombre,
                'sin_sopa', d.sin_sopa,
                'ajuste', CASE WHEN d.sin_sopa THEN -COALESCE(aj.descuento_sin_sopa, 1000) ELSE 0 END
              ) ORDER BY d.id
@@ -171,6 +193,7 @@ const getPedidos = async (req, res) => {
        LEFT JOIN pedido_detalle d ON d.pedido_id = p.id
        LEFT JOIN productos pr ON pr.id = d.producto_id
        LEFT JOIN productos sp ON sp.id = d.sopa_id
+       LEFT JOIN productos pp ON pp.id = d.principio_id
        LEFT JOIN ajustes_menu aj ON aj.user_id = p.user_id
        WHERE p.user_id = $1
          AND p.estado = ANY($2::text[])
@@ -284,10 +307,12 @@ const confirmarPedido = async (req, res) => {
     const detalle = await client.query(
       `SELECT d.producto_id, d.cantidad, d.nota, d.sin_sopa,
               sp.nombre AS sopa_nombre,
+              pp.nombre AS principio_nombre,
               COALESCE(aj.descuento_sin_sopa, 1000) AS descuento_sin_sopa
        FROM pedido_detalle d
        JOIN productos pr ON pr.id = d.producto_id
        LEFT JOIN productos sp ON sp.id = d.sopa_id
+       LEFT JOIN productos pp ON pp.id = d.principio_id
        LEFT JOIN ajustes_menu aj ON aj.user_id = pr.user_id
        WHERE d.pedido_id = $1
        ORDER BY d.id`,
@@ -297,10 +322,11 @@ const confirmarPedido = async (req, res) => {
       throw new ErrorNegocio(409, 'El pedido no tiene productos');
     }
 
-    // La sopa escogida queda anotada; "sin sopa" entra como descuento en la línea
+    // La sopa y el principio escogidos quedan anotados; "sin sopa" entra como descuento en la línea
     const items = detalle.rows.map((d) => {
       const partes = [
         d.sin_sopa ? 'Sin sopa' : d.sopa_nombre ? `Sopa: ${d.sopa_nombre}` : null,
+        d.principio_nombre ? `Principio: ${d.principio_nombre}` : null,
         d.nota,
       ].filter(Boolean);
 

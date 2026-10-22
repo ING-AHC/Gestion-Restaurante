@@ -1,0 +1,2 @@
+ALTER TABLE pedido_detalle
+  ADD COLUMN IF NOT EXISTS principio_id INTEGER REFERENCES productos(id) ON DELETE SET NULL;

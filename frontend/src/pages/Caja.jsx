@@ -87,6 +87,9 @@ export default function Caja() {
                   {it.sopa_nombre && (
                     <p className="text-xs text-pizarra-900/80">Sopa: {it.sopa_nombre}</p>
                   )}
+                  {it.principio_nombre && (
+                    <p className="text-xs text-pizarra-900/80">Principio: {it.principio_nombre}</p>
+                  )}
                   {it.sin_sopa && (
                     <div className="flex justify-between gap-2 text-xs text-pizarra-900/80">
                       <span>Sin sopa</span>

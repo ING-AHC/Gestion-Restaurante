@@ -13,7 +13,8 @@ const cop = (n) => `${n < 0 ? '−' : ''}$${Math.abs(Number(n)).toLocaleString('
 
 const resumen = (it) =>
   `${it.cantidad}× ${it.producto_nombre}` +
-  (it.sopa_nombre ? ` (${it.sopa_nombre})` : it.sin_sopa ? ' (sin sopa)' : '');
+  (it.sopa_nombre ? ` (${it.sopa_nombre})` : it.sin_sopa ? ' (sin sopa)' : '') +
+  (it.principio_nombre ? ` + ${it.principio_nombre}` : '');
 
 export default function Pedidos() {
   const [menu, setMenu] = useState([]);
@@ -53,17 +54,23 @@ export default function Pedidos() {
     return () => clearInterval(id);
   }, [cargarActivos]);
 
-  const tipos = useMemo(() => [...new Set(menu.map((p) => p.tipo))], [menu]);
+  // Los principios no se venden solos: se escogen dentro del ejecutivo
+  const tipos = useMemo(
+    () => [...new Set(menu.filter((p) => p.tipo !== 'principio').map((p) => p.tipo))],
+    [menu]
+  );
   useEffect(() => {
     if (tipos.length && !tipos.includes(tipoActivo)) setTipoActivo(tipos[0]);
   }, [tipos, tipoActivo]);
 
-  const sopas = menu.filter((p) => p.es_sopa);
+  const sopas = menu.filter((p) => p.tipo === 'sopa');
+  const principios = menu.filter((p) => p.tipo === 'principio');
   const visibles = menu.filter((p) => p.tipo === tipoActivo);
 
   const normales = Object.values(carrito);
   const totalItems = normales.reduce((s, i) => s + i.cantidad, 0) + platos.length;
   const faltaSopa = platos.some((l) => !l.sopa);
+  const faltaPrincipio = principios.length > 0 && platos.some((l) => !l.principio);
   const totalPrecio =
     normales.reduce((s, i) => s + i.cantidad * Number(i.producto.precio), 0) +
     platos.reduce(
@@ -86,7 +93,7 @@ export default function Pedidos() {
     setCarrito((prev) => ({ ...prev, [id]: { ...prev[id], nota } }));
 
   const agregarPlato = (producto) =>
-    setPlatos((prev) => [...prev, { key: keyRef.current++, producto, sopa: null, nota: '' }]);
+    setPlatos((prev) => [...prev, { key: keyRef.current++, producto, sopa: null, principio: null, nota: '' }]);
 
   const quitarPlato = (key) => setPlatos((prev) => prev.filter((l) => l.key !== key));
 
@@ -99,6 +106,7 @@ export default function Pedidos() {
     if (!mesa.trim()) return setError('Escribe la mesa');
     if (totalItems === 0) return setError('Agrega al menos un producto');
     if (faltaSopa) return setError('Escoge la sopa de cada plato, o marca “sin sopa”');
+    if (faltaPrincipio) return setError('Escoge el principio de cada plato');
 
     const items = [
       ...normales.map((i) => ({
@@ -111,6 +119,7 @@ export default function Pedidos() {
         cantidad: 1,
         nota: l.nota?.trim() || null,
         ...(l.sopa === 'sin' ? { sin_sopa: true } : { sopa_id: l.sopa }),
+        ...(l.principio ? { principio_id: l.principio } : {}),
       })),
     ];
 
@@ -159,8 +168,10 @@ export default function Pedidos() {
       ? 'Agrega productos al pedido'
       : faltaSopa
         ? 'Falta escoger la sopa'
-        : `Enviar a cocina (${totalItems})`;
-  const bloqueado = enviando || totalItems === 0 || faltaSopa;
+        : faltaPrincipio
+          ? 'Falta escoger el principio'
+          : `Enviar a cocina (${totalItems})`;
+  const bloqueado = enviando || totalItems === 0 || faltaSopa || faltaPrincipio;
 
   return (
     <div className="max-w-xl mx-auto space-y-4 pb-44 md:pb-0">
@@ -252,8 +263,8 @@ export default function Pedidos() {
                   <p className="font-medium truncate">{p.nombre}</p>
                   <p className="text-sm text-pizarra-900/70">
                     {cop(p.precio)}
-                    {p.incluye_sopa && ' · incluye sopa'}
-                    {p.es_sopa && ' · sopa sola'}
+                    {p.incluye_sopa && ' · incluye sopa y principio'}
+                    {p.tipo === 'sopa' && ' · sopa sola'}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -313,7 +324,7 @@ export default function Pedidos() {
       {/* Platos con sopa: una línea por plato */}
       {platos.length > 0 && (
         <div className="space-y-2 pt-2">
-          <p className="text-sm font-medium text-pizarra-900/70">Platos con sopa</p>
+          <p className="text-sm font-medium text-pizarra-900/70">Ejecutivos del pedido</p>
           {platos.map((l) => {
             const sin = l.sopa === 'sin';
             const precio = Number(l.producto.precio) - (sin ? Number(l.producto.descuento_sin_sopa) : 0);
@@ -368,6 +379,30 @@ export default function Pedidos() {
                     </p>
                   )}
                 </div>
+
+                {principios.length > 0 && (
+                  <div>
+                    <p className={`text-xs font-semibold ${l.principio ? 'text-pizarra-900/70' : 'text-terracota-600'}`}>
+                      {l.principio ? 'Principio' : 'Escoge el principio de este plato'}
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {principios.map((pr) => (
+                        <button
+                          key={pr.id}
+                          aria-pressed={l.principio === pr.id}
+                          onClick={() => cambiarPlato(l.key, { principio: pr.id })}
+                          className={`min-h-[44px] px-4 rounded-full text-sm ${
+                            l.principio === pr.id
+                              ? 'bg-mostaza-500 text-pizarra-950 font-semibold'
+                              : 'bg-white border border-pizarra-900/20'
+                          }`}
+                        >
+                          {pr.nombre}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2">
                   <MessageSquare size={16} className="text-pizarra-900/50 shrink-0" />
