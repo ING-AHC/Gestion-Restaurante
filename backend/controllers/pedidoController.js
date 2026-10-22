@@ -65,9 +65,10 @@ const createPedido = async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // Todo ejecutivo incluye sopa: la regla sale del tipo del producto
     const ids = [...new Set(lineas.map((l) => l.productoId))];
     const productos = await client.query(
-      `SELECT id, nombre, disponible_hoy, incluye_sopa
+      `SELECT id, nombre, disponible_hoy, (tipo = 'ejecutivo') AS incluye_sopa
        FROM productos WHERE id = ANY($1::int[]) AND user_id = $2`,
       [ids, userId]
     );
@@ -160,7 +161,7 @@ const getPedidos = async (req, res) => {
                'precio', pr.precio,
                'sopa_nombre', sp.nombre,
                'sin_sopa', d.sin_sopa,
-               'ajuste', CASE WHEN d.sin_sopa THEN -pr.descuento_sin_sopa ELSE 0 END
+               'ajuste', CASE WHEN d.sin_sopa THEN -COALESCE(aj.descuento_sin_sopa, 1000) ELSE 0 END
              ) ORDER BY d.id
            ) FILTER (WHERE d.id IS NOT NULL),
            '[]'
@@ -170,6 +171,7 @@ const getPedidos = async (req, res) => {
        LEFT JOIN pedido_detalle d ON d.pedido_id = p.id
        LEFT JOIN productos pr ON pr.id = d.producto_id
        LEFT JOIN productos sp ON sp.id = d.sopa_id
+       LEFT JOIN ajustes_menu aj ON aj.user_id = p.user_id
        WHERE p.user_id = $1
          AND p.estado = ANY($2::text[])
          AND ($3::int IS NULL OR p.creado_por = $3)
@@ -281,10 +283,12 @@ const confirmarPedido = async (req, res) => {
 
     const detalle = await client.query(
       `SELECT d.producto_id, d.cantidad, d.nota, d.sin_sopa,
-              sp.nombre AS sopa_nombre, pr.descuento_sin_sopa
+              sp.nombre AS sopa_nombre,
+              COALESCE(aj.descuento_sin_sopa, 1000) AS descuento_sin_sopa
        FROM pedido_detalle d
        JOIN productos pr ON pr.id = d.producto_id
        LEFT JOIN productos sp ON sp.id = d.sopa_id
+       LEFT JOIN ajustes_menu aj ON aj.user_id = pr.user_id
        WHERE d.pedido_id = $1
        ORDER BY d.id`,
       [id]

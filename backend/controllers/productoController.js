@@ -1,6 +1,6 @@
-const pool = require('../config/db');
+﻿const pool = require('../config/db');
 
-const TIPOS_VALIDOS = ['especial', 'rapida', 'ejecutivo', 'bebida'];
+const TIPOS_VALIDOS = ['especial', 'rapida', 'ejecutivo', 'bebida', 'sopa', 'principio'];
 
 const createProducto = async (req, res) => {
   const { nombre, tipo, precio, insumo_id } = req.body;
@@ -12,17 +12,20 @@ const createProducto = async (req, res) => {
     }
 
     if (!TIPOS_VALIDOS.includes(tipo)) {
-      return res.status(400).json({ error: 'El tipo debe ser: especial, rapida, ejecutivo o bebida' });
+      return res.status(400).json({ error: 'El tipo debe ser: especial, rapida, ejecutivo, sopa, principio o bebida' });
     }
 
-    if (tipo === 'bebida') {
-      if (!insumo_id) {
-        return res.status(400).json({ error: 'Las bebidas deben estar ligadas a un insumo' });
+    // En las bebidas el insumo es opcional: si no se envía, no descuenta inventario
+    const insumoLigado = tipo === 'bebida' && insumo_id ? Number(insumo_id) : null;
+
+    if (insumoLigado !== null) {
+      if (!Number.isInteger(insumoLigado) || insumoLigado <= 0) {
+        return res.status(400).json({ error: 'Insumo no válido' });
       }
 
       const insumoCheck = await pool.query(
         'SELECT id FROM insumos WHERE id = $1 AND user_id = $2',
-        [insumo_id, userId]
+        [insumoLigado, userId]
       );
 
       if (insumoCheck.rows.length === 0) {
@@ -31,10 +34,10 @@ const createProducto = async (req, res) => {
     }
 
     const newProducto = await pool.query(
-      `INSERT INTO productos (nombre, tipo, precio, insumo_id, user_id)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO productos (nombre, tipo, precio, insumo_id, es_sopa, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [nombre, tipo, precio, tipo === 'bebida' ? insumo_id : null, userId]
+      [nombre, tipo, precio, insumoLigado, tipo === 'sopa', userId]
     );
 
     res.status(201).json(newProducto.rows[0]);

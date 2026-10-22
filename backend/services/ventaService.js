@@ -42,7 +42,7 @@ const registrarVenta = async (client, userId, { tipo, fecha, items }) => {
       ]
     );
 
-    if (producto.tipo === 'especial' || producto.tipo === 'rapida' || producto.tipo === 'ejecutivo') {
+    if (producto.tipo === 'especial' || producto.tipo === 'rapida' || producto.tipo === 'ejecutivo' || producto.tipo === 'sopa' || producto.tipo === 'principio') {
       const receta = await client.query(
         'SELECT * FROM plato_insumos WHERE producto_id = $1',
         [item.producto_id]
@@ -55,7 +55,8 @@ const registrarVenta = async (client, userId, { tipo, fecha, items }) => {
           [cantidadADescontar, recetaItem.insumo_id, userId]
         );
       }
-    } else if (producto.tipo === 'bebida') {
+    } else if (producto.tipo === 'bebida' && producto.insumo_id) {
+      // La bebida solo descuenta inventario si tiene un insumo ligado (es opcional)
       await client.query(
         `UPDATE insumos SET cantidad_actual = cantidad_actual - $1 WHERE id = $2 AND user_id = $3`,
         [cantidadVendida, producto.insumo_id, userId]

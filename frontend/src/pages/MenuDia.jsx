@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { getMenuAdmin, updateMenuItem, reiniciarMenu } from '../services/menuService';
+import {
+  getMenuAdmin,
+  updateMenuItem,
+  reiniciarMenu,
+  getAjustesMenu,
+  updateAjustesMenu,
+} from '../services/menuService';
 
 const TITULOS = {
   ejecutivo: 'Ejecutivos',
+  sopa: 'Sopas',
+  principio: 'Principios',
   especial: 'Especiales',
   rapida: 'Comidas rápidas',
   bebida: 'Bebidas',
 };
-const ORDEN = ['ejecutivo', 'especial', 'rapida', 'bebida'];
+const ORDEN = ['ejecutivo', 'sopa', 'principio', 'especial', 'rapida', 'bebida'];
 
 const titulo = (tipo) => TITULOS[tipo] || tipo.charAt(0).toUpperCase() + tipo.slice(1);
 const cop = (n) => `$${Number(n).toLocaleString('es-CO')}`;
@@ -29,59 +37,11 @@ function Interruptor({ activo, onChange, etiqueta }) {
   );
 }
 
-function Ajustes({ item, guardar }) {
-  const [descuento, setDescuento] = useState(String(Number(item.descuento_sin_sopa)));
-
-  return (
-    <div className="border-t border-pizarra-900/10 px-4 py-3 bg-pizarra-900/[0.03] space-y-2 text-sm">
-      <label className="flex items-center gap-3 min-h-[44px]">
-        <input
-          type="checkbox"
-          className="w-5 h-5"
-          checked={item.incluye_sopa}
-          disabled={item.es_sopa}
-          onChange={(e) => guardar({ incluye_sopa: e.target.checked })}
-        />
-        Este plato incluye sopa (el mesero la escoge)
-      </label>
-      <label className="flex items-center gap-3 min-h-[44px]">
-        <input
-          type="checkbox"
-          className="w-5 h-5"
-          checked={item.es_sopa}
-          disabled={item.incluye_sopa}
-          onChange={(e) => guardar({ es_sopa: e.target.checked })}
-        />
-        Este producto es una sopa (se ofrece dentro de los platos que incluyen sopa)
-      </label>
-      {item.incluye_sopa && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span>Descuento si no lleva sopa: $</span>
-          <input
-            type="number"
-            min="0"
-            step="100"
-            value={descuento}
-            onChange={(e) => setDescuento(e.target.value)}
-            className="w-28 px-3 py-2 rounded-lg border border-pizarra-900/20 bg-white"
-          />
-          <button
-            type="button"
-            onClick={() => guardar({ descuento_sin_sopa: Number(descuento) || 0 })}
-            className="min-h-[44px] px-4 rounded-lg border border-pizarra-900/25 font-medium"
-          >
-            Guardar
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function MenuDia() {
   const [items, setItems] = useState([]);
-  const [abierto, setAbierto] = useState(null);
+  const [descuento, setDescuento] = useState('');
   const [error, setError] = useState('');
+  const [ok, setOk] = useState('');
 
   const cargar = useCallback(async () => {
     try {
@@ -93,10 +53,14 @@ export default function MenuDia() {
 
   useEffect(() => {
     cargar();
+    getAjustesMenu()
+      .then((a) => setDescuento(String(a.descuento_sin_sopa)))
+      .catch(() => {});
   }, [cargar]);
 
   const guardar = async (item, cambios) => {
     setError('');
+    setOk('');
     // Se muestra el cambio al instante y se corrige si el servidor lo rechaza
     setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, ...cambios } : x)));
     try {
@@ -110,6 +74,7 @@ export default function MenuDia() {
 
   const activarTodo = async (valor) => {
     setError('');
+    setOk('');
     try {
       await reiniciarMenu(valor);
       cargar();
@@ -118,20 +83,30 @@ export default function MenuDia() {
     }
   };
 
+  const guardarDescuento = async () => {
+    setError('');
+    setOk('');
+    try {
+      const a = await updateAjustesMenu({ descuento_sin_sopa: Number(descuento) || 0 });
+      setDescuento(String(a.descuento_sin_sopa));
+      setOk('Descuento guardado');
+      cargar();
+    } catch (e) {
+      setError(e.response?.data?.error || 'No se pudo guardar el descuento');
+    }
+  };
+
   const secciones = useMemo(() => {
-    const sopas = items.filter((i) => i.es_sopa);
-    const resto = items.filter((i) => !i.es_sopa);
-    const tipos = [...new Set(resto.map((i) => i.tipo))].sort((a, b) => {
+    const tipos = [...new Set(items.map((i) => i.tipo))].sort((a, b) => {
       const ia = ORDEN.indexOf(a) === -1 ? 99 : ORDEN.indexOf(a);
       const ib = ORDEN.indexOf(b) === -1 ? 99 : ORDEN.indexOf(b);
       return ia - ib;
     });
-    const lista = tipos.map((t) => ({ clave: t, titulo: titulo(t), items: resto.filter((i) => i.tipo === t) }));
-    if (sopas.length > 0) {
-      const pos = lista.findIndex((s) => s.clave === 'ejecutivo') + 1;
-      lista.splice(pos, 0, { clave: 'sopas', titulo: 'Sopas del día', items: sopas });
-    }
-    return lista;
+    return tipos.map((t) => ({
+      clave: t,
+      titulo: titulo(t),
+      items: items.filter((i) => i.tipo === t),
+    }));
   }, [items]);
 
   const totalOn = items.filter((i) => i.disponible_hoy).length;
@@ -161,7 +136,38 @@ export default function MenuDia() {
         </div>
       </div>
 
+      {/* Regla general de la sopa en los ejecutivos */}
+      <div className="bg-papel-card rounded-2xl border border-pizarra-900/10 p-4 space-y-2">
+        <p className="font-semibold">Sopa en los ejecutivos</p>
+        <p className="text-sm text-pizarra-900/70">
+          Todos los ejecutivos incluyen sopa y principio. El mesero escoge entre las sopas y
+          principios activos hoy. Si el cliente no lleva sopa, se descuenta este valor.
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label htmlFor="descuento" className="text-sm">
+            Descuento si no lleva sopa: $
+          </label>
+          <input
+            id="descuento"
+            type="number"
+            min="0"
+            step="100"
+            value={descuento}
+            onChange={(e) => setDescuento(e.target.value)}
+            className="w-28 px-3 py-2 rounded-lg border border-pizarra-900/20 bg-white"
+          />
+          <button
+            type="button"
+            onClick={guardarDescuento}
+            className="min-h-[44px] px-4 rounded-lg bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 font-semibold text-sm"
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
+
       {error && <p className="text-terracota-600 text-sm">{error}</p>}
+      {ok && <p className="text-green-700 text-sm">{ok}</p>}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px] items-start">
         <div className="space-y-5 min-w-0">
@@ -173,42 +179,30 @@ export default function MenuDia() {
           {secciones.map((sec) => (
             <section key={sec.clave} className="space-y-2">
               <h2 className="text-xs font-bold uppercase tracking-wider text-pizarra-900/70">
-                {sec.titulo} · {sec.items.filter((i) => i.disponible_hoy).length} de {sec.items.length} activos
+                {sec.titulo} · {sec.items.filter((i) => i.disponible_hoy).length} de{' '}
+                {sec.items.length} activos
               </h2>
               {sec.items.map((item) => (
                 <div
                   key={item.id}
-                  className={`rounded-2xl border overflow-hidden ${
+                  className={`rounded-2xl border flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 ${
                     item.disponible_hoy
                       ? 'bg-papel-card border-pizarra-900/15'
                       : 'bg-pizarra-900/[0.06] border-pizarra-900/10'
                   }`}
                 >
-                  <div className="flex items-center gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold truncate">{item.nombre}</p>
-                      <p className="text-sm text-pizarra-900/70">
-                        {cop(item.precio)}
-                        {item.incluye_sopa && ' · incluye sopa'}
-                        {item.es_sopa && ' · también se vende sola'}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setAbierto(abierto === item.id ? null : item.id)}
-                      aria-expanded={abierto === item.id}
-                      className="min-h-[44px] px-2 text-sm underline"
-                    >
-                      Ajustes
-                    </button>
-                    <Interruptor
-                      activo={item.disponible_hoy}
-                      etiqueta={item.nombre}
-                      onChange={() => guardar(item, { disponible_hoy: !item.disponible_hoy })}
-                    />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold truncate">{item.nombre}</p>
+                    <p className="text-sm text-pizarra-900/70">
+                      {cop(item.precio)}
+                      {item.incluye_sopa && ' · incluye sopa y principio'}
+                    </p>
                   </div>
-                  {abierto === item.id && (
-                    <Ajustes key={item.id} item={item} guardar={(c) => guardar(item, c)} />
-                  )}
+                  <Interruptor
+                    activo={item.disponible_hoy}
+                    etiqueta={item.nombre}
+                    onChange={() => guardar(item, { disponible_hoy: !item.disponible_hoy })}
+                  />
                 </div>
               ))}
             </section>
@@ -239,9 +233,6 @@ export default function MenuDia() {
               </div>
             );
           })}
-          <p className="text-xs text-papel/70 pt-1">
-            Al pedir un ejecutivo, el mesero escoge entre las sopas activas, o marca “sin sopa”.
-          </p>
         </aside>
       </div>
     </div>

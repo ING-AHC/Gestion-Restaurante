@@ -15,6 +15,8 @@ const TIPOS = [
   { value: 'especial', label: 'Especial' },
   { value: 'rapida', label: 'Comida rápida' },
   { value: 'ejecutivo', label: 'Ejecutivo' },
+  { value: 'sopa', label: 'Sopa' },
+  { value: 'principio', label: 'Principio' },
   { value: 'bebida', label: 'Bebida' },
 ];
 
@@ -67,7 +69,7 @@ function Productos() {
         nombre,
         tipo,
         precio: parseFloat(precio),
-        insumo_id: esBebida ? insumoLigado : null,
+        insumo_id: esBebida && insumoLigado ? insumoLigado : null,
       });
       setProductos((prev) => [...prev, { ...nuevo, receta: [] }]);
       setNombre('');
@@ -208,15 +210,14 @@ function Productos() {
                 className="overflow-hidden"
               >
                 <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
-                  Insumo del inventario
+                  Insumo del inventario (opcional)
                 </label>
                 <select
                   value={insumoLigado}
                   onChange={(e) => setInsumoLigado(e.target.value)}
-                  required={esBebida}
                   className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
                 >
-                  <option value="">Selecciona...</option>
+                  <option value="">Sin insumo (no descuenta inventario)</option>
                   {insumos.map((i) => (
                     <option key={i.id} value={i.id}>{i.nombre}</option>
                   ))}
@@ -301,7 +302,7 @@ function Productos() {
                       >
                         Editar
                       </button>
-                      {(producto.tipo === 'especial' || producto.tipo === 'rapida' || producto.tipo === 'ejecutivo') && (
+                      {(producto.tipo === 'especial' || producto.tipo === 'rapida' || producto.tipo === 'ejecutivo' || producto.tipo === 'sopa' || producto.tipo === 'principio') && (
                         <button
                           onClick={() => abrirModalReceta(producto)}
                           className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
