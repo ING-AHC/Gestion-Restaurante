@@ -19,6 +19,20 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
+  // Si la sesión cambia en otra pestaña (cierre de sesión o ingreso con otro
+  // usuario), esta pestaña se actualiza para no quedar desincronizada.
+  useEffect(() => {
+    const sincronizar = (e) => {
+      if (e.key !== 'token' && e.key !== 'user') return;
+      const t = localStorage.getItem('token');
+      const u = localStorage.getItem('user');
+      setToken(t);
+      setUser(t && u ? JSON.parse(u) : null);
+    };
+    window.addEventListener('storage', sincronizar);
+    return () => window.removeEventListener('storage', sincronizar);
+  }, []);
+
   const login = (userData, userToken) => {
     setUser(userData);
     setToken(userToken);

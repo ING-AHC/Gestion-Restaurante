@@ -12,4 +12,18 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Si la sesión deja de ser válida (token vencido o usuario desactivado),
+// se cierra y se manda al login.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && localStorage.getItem('token')) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;
