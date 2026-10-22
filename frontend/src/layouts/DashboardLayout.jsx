@@ -14,6 +14,7 @@ import {
   Flame,
   Wallet,
   Users,
+  CalendarCheck,
   Menu,
   X,
 } from 'lucide-react';
@@ -22,6 +23,7 @@ import { ETIQUETA_ROL } from '../utils/roles';
 
 const navItems = [
   { to: '/dashboard', label: 'Resumen', icon: LayoutDashboard, roles: ['admin'] },
+  { to: '/menu-del-dia', label: 'Menú del día', icon: CalendarCheck, roles: ['admin'] },
   { to: '/pedidos', label: 'Pedidos', icon: ClipboardList, roles: ['admin', 'mesero', 'caja'] },
   { to: '/cocina', label: 'Cocina', icon: Flame, roles: ['admin', 'cocina'] },
   { to: '/caja', label: 'Caja', icon: Wallet, roles: ['admin', 'caja'] },

@@ -51,8 +51,13 @@ const createPedido = async (req, res) => {
       return res.status(400).json({ error: 'Producto o cantidad no válidos en el pedido' });
     }
 
+    const sopaId = item.sopa_id ? Number(item.sopa_id) : null;
+    if (sopaId !== null && (!Number.isInteger(sopaId) || sopaId <= 0)) {
+      return res.status(400).json({ error: 'Sopa no válida en el pedido' });
+    }
+
     const nota = item.nota ? String(item.nota).trim().slice(0, 255) : null;
-    lineas.push({ productoId, cantidad, nota });
+    lineas.push({ productoId, cantidad, nota, sopaId, sinSopa: item.sin_sopa === true });
   }
 
   const client = await pool.connect();
@@ -61,12 +66,48 @@ const createPedido = async (req, res) => {
     await client.query('BEGIN');
 
     const ids = [...new Set(lineas.map((l) => l.productoId))];
-    const propios = await client.query(
-      'SELECT id FROM productos WHERE id = ANY($1::int[]) AND user_id = $2',
+    const productos = await client.query(
+      `SELECT id, nombre, disponible_hoy, incluye_sopa
+       FROM productos WHERE id = ANY($1::int[]) AND user_id = $2`,
       [ids, userId]
     );
-    if (propios.rows.length !== ids.length) {
+    if (productos.rows.length !== ids.length) {
       throw new ErrorNegocio(404, 'Alguno de los productos no existe');
+    }
+    const porId = new Map(productos.rows.map((p) => [p.id, p]));
+
+    // Sopas escogidas: deben ser sopas del restaurante y estar disponibles hoy
+    const sopaIds = [...new Set(lineas.map((l) => l.sopaId).filter(Boolean))];
+    let sopasValidas = new Set();
+    if (sopaIds.length > 0) {
+      const sopas = await client.query(
+        `SELECT id FROM productos
+         WHERE id = ANY($1::int[]) AND user_id = $2 AND es_sopa AND disponible_hoy`,
+        [sopaIds, userId]
+      );
+      sopasValidas = new Set(sopas.rows.map((s) => s.id));
+    }
+
+    for (const l of lineas) {
+      const p = porId.get(l.productoId);
+
+      if (!p.disponible_hoy) {
+        throw new ErrorNegocio(409, `"${p.nombre}" no está disponible hoy`);
+      }
+
+      if (p.incluye_sopa) {
+        if (l.cantidad !== 1) {
+          throw new ErrorNegocio(400, `"${p.nombre}" se pide de a uno, para escoger la sopa de cada plato`);
+        }
+        if (l.sinSopa) {
+          l.sopaId = null;
+        } else if (!l.sopaId || !sopasValidas.has(l.sopaId)) {
+          throw new ErrorNegocio(400, `Escoge la sopa de "${p.nombre}" o marca "sin sopa"`);
+        }
+      } else {
+        l.sopaId = null;
+        l.sinSopa = false;
+      }
     }
 
     const pedido = await client.query(
@@ -76,9 +117,9 @@ const createPedido = async (req, res) => {
 
     for (const l of lineas) {
       await client.query(
-        `INSERT INTO pedido_detalle (pedido_id, producto_id, cantidad, nota)
-         VALUES ($1, $2, $3, $4)`,
-        [pedido.rows[0].id, l.productoId, l.cantidad, l.nota]
+        `INSERT INTO pedido_detalle (pedido_id, producto_id, cantidad, nota, sopa_id, sin_sopa)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [pedido.rows[0].id, l.productoId, l.cantidad, l.nota, l.sopaId, l.sinSopa]
       );
     }
 
@@ -116,7 +157,10 @@ const getPedidos = async (req, res) => {
                'producto_nombre', pr.nombre,
                'cantidad', d.cantidad,
                'nota', d.nota,
-               'precio', pr.precio
+               'precio', pr.precio,
+               'sopa_nombre', sp.nombre,
+               'sin_sopa', d.sin_sopa,
+               'ajuste', CASE WHEN d.sin_sopa THEN -pr.descuento_sin_sopa ELSE 0 END
              ) ORDER BY d.id
            ) FILTER (WHERE d.id IS NOT NULL),
            '[]'
@@ -125,6 +169,7 @@ const getPedidos = async (req, res) => {
        LEFT JOIN users u ON u.id = p.creado_por
        LEFT JOIN pedido_detalle d ON d.pedido_id = p.id
        LEFT JOIN productos pr ON pr.id = d.producto_id
+       LEFT JOIN productos sp ON sp.id = d.sopa_id
        WHERE p.user_id = $1
          AND p.estado = ANY($2::text[])
          AND ($3::int IS NULL OR p.creado_por = $3)
@@ -235,19 +280,33 @@ const confirmarPedido = async (req, res) => {
     }
 
     const detalle = await client.query(
-      'SELECT producto_id, cantidad, nota FROM pedido_detalle WHERE pedido_id = $1 ORDER BY id',
+      `SELECT d.producto_id, d.cantidad, d.nota, d.sin_sopa,
+              sp.nombre AS sopa_nombre, pr.descuento_sin_sopa
+       FROM pedido_detalle d
+       JOIN productos pr ON pr.id = d.producto_id
+       LEFT JOIN productos sp ON sp.id = d.sopa_id
+       WHERE d.pedido_id = $1
+       ORDER BY d.id`,
       [id]
     );
     if (detalle.rows.length === 0) {
       throw new ErrorNegocio(409, 'El pedido no tiene productos');
     }
 
-    const items = detalle.rows.map((d) => ({
-      producto_id: d.producto_id,
-      cantidad: d.cantidad,
-      adicion_descripcion: d.nota,
-      adicion_valor: 0,
-    }));
+    // La sopa escogida queda anotada; "sin sopa" entra como descuento en la línea
+    const items = detalle.rows.map((d) => {
+      const partes = [
+        d.sin_sopa ? 'Sin sopa' : d.sopa_nombre ? `Sopa: ${d.sopa_nombre}` : null,
+        d.nota,
+      ].filter(Boolean);
+
+      return {
+        producto_id: d.producto_id,
+        cantidad: d.cantidad,
+        adicion_descripcion: partes.length ? partes.join(' · ').slice(0, 255) : null,
+        adicion_valor: d.sin_sopa ? -Number(d.descuento_sin_sopa) : 0,
+      };
+    });
 
     const venta = await registrarVenta(client, userId, { tipo, fecha, items });
 

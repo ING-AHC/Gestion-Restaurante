@@ -16,7 +16,7 @@ import Pedidos from './pages/Pedidos';
 import Cocina from './pages/Cocina';
 import Caja from './pages/Caja';
 import Personal from './pages/Personal';
-
+import MenuDia from './pages/MenuDia';
 const SoloAdmin = ({ children }) => <RutaRol roles={['admin']}>{children}</RutaRol>;
 
 function App() {
@@ -42,6 +42,7 @@ function App() {
           <Route path="/ventas" element={<SoloAdmin><Ventas /></SoloAdmin>} />
           <Route path="/rendimientos" element={<SoloAdmin><Rendimientos /></SoloAdmin>} />
           <Route path="/personal" element={<SoloAdmin><Personal /></SoloAdmin>} />
+                    <Route path="/menu-del-dia" element={<SoloAdmin><MenuDia /></SoloAdmin>} />
           <Route
             path="/pedidos"
             element={<RutaRol roles={['admin', 'mesero', 'caja']}><Pedidos /></RutaRol>}

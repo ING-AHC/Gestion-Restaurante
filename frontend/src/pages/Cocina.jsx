@@ -117,9 +117,17 @@ export default function Cocina() {
               </div>
 
               <ul className="space-y-2 text-2xl">
-                {p.items.map((it, i) => (
+                               {p.items.map((it, i) => (
                   <li key={i}>
                     <span className="font-bold">{it.cantidad}×</span> {it.producto_nombre}
+                    {it.sopa_nombre && (
+                      <span className="block text-xl text-pizarra-900/80">Sopa: {it.sopa_nombre}</span>
+                    )}
+                    {it.sin_sopa && (
+                      <span className="inline-block mt-1 text-lg font-bold bg-pizarra-900 text-white rounded-lg px-3 py-0.5">
+                        SIN SOPA
+                      </span>
+                    )}
                     {it.nota && (
                       <span className="block text-lg text-terracota-600">↳ {it.nota}</span>
                     )}

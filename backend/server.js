@@ -52,6 +52,8 @@ const reporteRoutes = require('./routes/reporteRoutes');
 app.use('/api/reportes', reporteRoutes);
 const personalRoutes = require('./routes/personalRoutes');
 app.use('/api/personal', personalRoutes);
+const menuRoutes = require('./routes/menuRoutes');
+app.use('/api/menu', menuRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Servidor de Gestión Restaurante funcionando 🚀' });

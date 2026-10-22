@@ -3,8 +3,9 @@ const pool = require('../config/db');
 
 const ID = '\\d+';
 const PERMISOS = {
-   mesero: [
+  mesero: [
     ['GET', /^\/api\/productos\/?$/],
+    ['GET', /^\/api\/menu\/hoy\/?$/],
     ['GET', /^\/api\/pedidos\/?$/],
     ['POST', /^\/api\/pedidos\/?$/],
     ['PATCH', new RegExp(`^/api/pedidos/${ID}/estado/?$`)],
@@ -14,6 +15,7 @@ const PERMISOS = {
   ],
   caja: [
     ['GET', /^\/api\/productos\/?$/],
+    ['GET', /^\/api\/menu\/hoy\/?$/],
     ['GET', /^\/api\/pedidos\/?$/],
     ['POST', /^\/api\/pedidos\/?$/],
     ['PATCH', new RegExp(`^/api/pedidos/${ID}/estado/?$`)],

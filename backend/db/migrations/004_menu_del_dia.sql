@@ -1,0 +1,11 @@
+ALTER TABLE productos
+  ADD COLUMN disponible_hoy BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN es_sopa BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN incluye_sopa BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN descuento_sin_sopa NUMERIC(10,2) NOT NULL DEFAULT 1000
+    CHECK (descuento_sin_sopa >= 0),
+  ADD CONSTRAINT productos_sopa_chk CHECK (NOT (es_sopa AND incluye_sopa));
+
+ALTER TABLE pedido_detalle
+  ADD COLUMN sopa_id INTEGER REFERENCES productos(id) ON DELETE SET NULL,
+  ADD COLUMN sin_sopa BOOLEAN NOT NULL DEFAULT FALSE;
