@@ -17,9 +17,9 @@ La cuenta de demostración tiene datos inventados. También puedes registrarte c
 
 <!-- TODO: cambia los nombres por los de los archivos de tu carpeta docs/ -->
 ![Panel principal](docs/dashboard.png)
-![Pedido del mesero](docs/pedidos.png)
-![Pantalla de cocina](docs/cocina.png)
-![Caja](docs/caja.png)
+![menu dia](docs/menudia.png)
+![productos](docs/producto.png)
+![compras](docs/compra.png)
 
 ## El flujo de un servicio
 
