@@ -1,74 +1,125 @@
-# Gestión Restaurante
+# Gestión de Restaurante
 
-Gestión Restaurante
+> Un restaurante no se quiebra por falta de clientes, sino por no saber en qué se le va la plata.
 
-Un restaurante no se quiebra por falta de clientes, sino por no saber en qué se le va la plata.
+Sistema web full stack para operar un restaurante de principio a fin: pedidos del mesero, pantalla de cocina, caja con descuento automático de inventario, menú del día, compras, gastos y deudas con proveedores. Cada restaurante trabaja aislado de los demás y cada empleado entra con su propio rol.
 
-Este proyecto nació en una cocina de verdad: la del restaurante de mi mamá. Ella llevaba el inventario, las compras y las cuentas con cuaderno y memoria, y yo quise darle algo mejor: un sistema que le diga cuánto vendió, cuánto gastó, qué le debe a cada proveedor y qué se le está acabando, sin hacer cuentas a mano.
+**Demo:** https://gestion-restaurante-wine.vercel.app
 
-Lo especial es que el inventario se mueve solo. Cada plato tiene su receta, y cuando se vende, el sistema descuenta los ingredientes exactos que usó.
-
-Es mi primer proyecto full stack pensado para un negocio real, y lo construí de punta a punta: base de datos, API, interfaz, seguridad y despliegue.
-
-**Demo en línea:** [https://gestion-restaurante-wine.vercel.app](https://gestion-restaurante-wine.vercel.app)
-
-| | |
-|---|---|
+| Campo | Valor |
+| --- | --- |
 | Correo | `demo2@restaurante-demo.com` |
 | Clave | `ES_DEMOES` |
 
-La cuenta demo tiene datos inventados. Si prefieres empezar de cero, puedes registrarte con cualquier correo y tendrás una cuenta vacía.
+La cuenta de demostración tiene datos inventados. También puedes registrarte con cualquier correo y empezar con una cuenta vacía.
 
-![Dashboard](docs/dashboard.png)
+## Capturas
 
-## Qué hace
+<!-- TODO: cambia los nombres por los de los archivos de tu carpeta docs/ -->
+![Panel principal](docs/dashboard.png)
+![Pedido del mesero](docs/pedidos.png)
+![Pantalla de cocina](docs/cocina.png)
+![Caja](docs/caja.png)
 
-- **Dashboard:** ventas, compras, ganancia, gastos por categoría y deudas con proveedores.
-- **Insumos:** inventario por categoría, búsqueda, orden por columnas y alertas de stock bajo. Se puede corregir la cantidad cuando el inventario físico no cuadra.
-- **Compras:** de insumos (suben el inventario) o gastos generales con su categoría, marcadas como pagadas o pendientes.
-- **Productos y recetas:** platos con los insumos y cantidades que usan, y bebidas ligadas directamente a un insumo.
-- **Ventas:** con adiciones y descuentos por línea, y consumo interno, que no cuenta como ingreso. Al registrar una venta se descuenta el inventario según la receta.
-- **Proveedores y categorías de gasto:** con validación de duplicados.
+## El flujo de un servicio
 
-![Insumos](docs/insumos.png)
+1. **Mesero:** crea el pedido desde el celular con mesa, productos y notas. En los ejecutivos escoge la sopa y el principio.
+2. **Cocina:** ve el pedido en una pantalla de solo lectura, con el color según el tiempo de espera y aviso de pedido nuevo.
+3. **Mesero:** marca "Entregado" cuando lleva el plato a la mesa.
+4. **Caja:** cobra. Se registra la venta y se descuenta el inventario según la receta de cada plato.
 
-![Ventas](docs/ventas.png)
+## Funcionalidades
 
-## Tecnologías
-
-- **Frontend:** React, Vite, Tailwind CSS, Framer Motion, Lucide.
-- **Backend:** Node.js, Express.
-- **Base de datos:** PostgreSQL.
-- **Seguridad:** JWT, bcrypt, límite de intentos en el login.
-- **Despliegue:** Vercel (frontend) y Railway (backend y base de datos).
+- **Pedidos casi en tiempo real:** mesero, cocina y caja se actualizan cada 3 o 4 segundos.
+- **Roles y permisos:** administrador, mesero, cocina y caja. Cada uno ve solo lo que necesita; el mesero solo ve y modifica sus propios pedidos.
+- **Menú del día:** el administrador activa lo que hay hoy y el mesero solo ve eso.
+- **Ejecutivos con sopa y principio:** sopas y principios son tipos de producto. El mesero escoge entre los activos del día, y si el cliente no lleva sopa se aplica un descuento configurable.
+- **Panel principal** con el resumen del negocio.
+- **Inventario** de insumos con alertas de stock bajo.
+- **Productos y recetas:** cada plato descuenta sus insumos al venderse. Las bebidas pueden ligarse a un insumo de forma opcional.
+- **Ventas** con descuentos y consumo interno.
+- **Compras** que suman al inventario.
+- **Proveedores y categorías de gasto.**
+- **Personal:** el administrador crea y desactiva las cuentas de sus empleados.
 
 ## Decisiones técnicas
 
-- **Aislamiento entre cuentas.** Cada consulta filtra por el usuario del token, y además se valida que los insumos, proveedores y categorías que llegan en una petición pertenezcan a quien la hace. Lo probé con dos cuentas intentando modificar datos de la otra con el token equivocado, y encontré y corregí varios huecos en recetas, compras y ventas.
-- **Transacciones.** Registrar una compra o una venta toca varias tablas y el inventario. Todo se hace dentro de una transacción, y si algo falla no queda nada a medias.
-- **Fechas sin desfase.** Las fechas se manejan como texto `YYYY-MM-DD`. Antes, a las 10 u 11 de la noche la venta se registraba con el día siguiente por la conversión a UTC.
-- **Historial protegido.** No se puede borrar un insumo con compras o recetas asociadas, para no dejar reportes sin sentido.
-- **Registro y login.** Correo normalizado, contraseña de 8 a 72 caracteres y máximo 20 intentos por IP cada 15 minutos.
+- **Permisos en el servidor, no en la interfaz.** El middleware de autenticación aplica una lista de rutas permitidas por rol, con denegación por defecto. Ocultar un botón en React es comodidad, no seguridad.
+- **Aislamiento entre restaurantes.** Cada consulta filtra por el `user_id` del dueño. Los empleados llevan en su token el id del dueño, así que las consultas existentes funcionan sin cambios.
+- **Cobro sin duplicados.** Confirmar un pedido bloquea la fila (`SELECT ... FOR UPDATE`) dentro de una transacción. Si dos cajeros confirman a la vez, el segundo recibe un 409 en lugar de cobrar dos veces.
+- **Una sola lógica de venta.** `registrarVenta` es un servicio compartido: la venta directa y el cobro de un pedido descuentan inventario con el mismo código.
+- **Transacciones SQL** en compras y ventas, para que el inventario nunca quede a medias.
+- **Fechas como texto `AAAA-MM-DD`**, para evitar los corrimientos por zona horaria (UTC).
+- **Protección de historial:** no se puede borrar un insumo que tiene movimientos asociados.
+- **Seguridad de sesión:** JWT, contraseñas con bcrypt y límite de intentos de login (máximo 20 por IP cada 15 minutos).
+- **Migraciones versionadas** en SQL, numeradas y seguras de repetir.
 
-![Productos](docs/productos.png)
+## Stack
 
-## Cómo correrlo en tu computador
+| Capa | Tecnología |
+| --- | --- |
+| Frontend | React, Vite, Tailwind CSS v4, Framer Motion, Lucide |
+| Backend | Node.js, Express |
+| Base de datos | PostgreSQL |
+| Seguridad | JWT, bcrypt, límite de intentos de login |
+| Despliegue | Vercel (frontend), Railway (backend y base de datos) |
 
-Necesitas Node.js 18 o superior y PostgreSQL.
+## Estructura
+
+```
+Gestion-Restaurante/
+├── backend/
+│   ├── controllers/     # lógica de cada módulo
+│   ├── routes/
+│   ├── middleware/      # autenticación y permisos por rol
+│   ├── services/        # lógica compartida (ventas e inventario)
+│   └── db/
+│       ├── schema.sql   # esquema base
+│       └── migrations/  # cambios posteriores, numerados
+├── frontend/
+│   └── src/
+│       ├── pages/       # Pedidos, Cocina, Caja, Menú del día, Productos...
+│       ├── components/
+│       ├── context/     # sesión
+│       └── services/    # llamadas a la API
+├── scripts/
+│   └── seedDemo.js      # datos de demostración
+└── docs/                # capturas de pantalla
+```
+
+## Cómo correrlo en local
+
+Requisitos: Node.js 18+ y PostgreSQL.
+
+**1. Clonar**
 
 ```bash
 git clone https://github.com/ING-AHC/Gestion-Restaurante.git
 cd Gestion-Restaurante
 ```
 
-**Base de datos**
+**2. Base de datos**
 
 ```bash
-psql -U postgres -c "CREATE DATABASE gestion_restaurante"
-psql -U postgres -d gestion_restaurante -f backend/db/schema.sql
+createdb gestion_restaurante
+psql -d gestion_restaurante -f backend/db/schema.sql
 ```
 
-**Backend**
+Luego aplica las migraciones en orden.
+
+En Linux o macOS:
+
+```bash
+for f in backend/db/migrations/*.sql; do psql -d gestion_restaurante -f "$f"; done
+```
+
+En Windows (PowerShell):
+
+```powershell
+Get-ChildItem backend\db\migrations\*.sql | Sort-Object Name | ForEach-Object { psql -d gestion_restaurante -f $_.FullName }
+```
+
+**3. Backend**
 
 ```bash
 cd backend
@@ -81,17 +132,17 @@ Crea `backend/.env`:
 PORT=4000
 DB_USER=postgres
 DB_PASSWORD=tu_clave
-DB_HOST=127.0.0.1
+DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=gestion_restaurante
-JWT_SECRET=una_cadena_larga_y_aleatoria
+JWT_SECRET=una_clave_larga_y_aleatoria
 ```
 
 ```bash
 npm run dev
 ```
 
-**Frontend**
+**4. Frontend** (en otra terminal)
 
 ```bash
 cd frontend
@@ -108,22 +159,27 @@ VITE_API_URL=http://localhost:4000/api
 npm run dev
 ```
 
-Abre `http://localhost:5173`.
+Abre http://localhost:5173.
 
-**Datos de ejemplo (opcional):** con el backend corriendo, `scripts/seedDemo.js` carga una cuenta con datos inventados.
+**5. Datos de demostración (opcional)**
+
+Con el backend corriendo, carga una cuenta con datos inventados:
 
 ```bash
-API_URL=http://localhost:4000/api DEMO_PASSWORD=una_clave node scripts/seedDemo.js
+API_URL=http://localhost:4000/api DEMO_PASSWORD=ES_DEMOES node scripts/seedDemo.js
 ```
-
-En PowerShell, define las variables con `$env:API_URL = "..."` y `$env:DEMO_PASSWORD = "..."` antes de correr `node scripts/seedDemo.js`.
 
 ## Próximos pasos
 
-- Pedidos desde el celular del mesero, con pantalla de cocina en tiempo real.
-- Usuarios de personal con roles.
-- Comprobante imprimible.
+- Aviso de "sin conexión" y cola de pedidos cuando se cae el internet.
+- Cierre de caja diario e impresión de comprobante.
+- Costo y margen por plato.
+- Pruebas automáticas e integración continua.
+- Recuperación de contraseña y copias de seguridad automáticas.
 
 ## Autor
 
-[Alejandro Hurtado Collazos] · [ALEJANDRO HURTADO COLLAZOS] · [Al.hurtado20@gmail.com]
+**Alejandro Hurtado** · Ingeniero de Sistemas
+[GitHub](https://github.com/ING-AHC) · [LinkedIn](www.linkedin.com/in/alejandro-hurtado-collazos-523843173
+
+)
