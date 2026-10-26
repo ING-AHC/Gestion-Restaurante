@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import {
-  getMenuAdmin,
-  updateMenuItem,
-  reiniciarMenu,
-  getAjustesMenu,
-  updateAjustesMenu,
-} from '../services/menuService';
+import { getMenuAdmin, updateMenuItem, reiniciarMenu } from '../services/menuService';
 
 const TITULOS = {
   ejecutivo: 'Ejecutivos',
@@ -39,9 +33,7 @@ function Interruptor({ activo, onChange, etiqueta }) {
 
 export default function MenuDia() {
   const [items, setItems] = useState([]);
-  const [descuento, setDescuento] = useState('');
   const [error, setError] = useState('');
-  const [ok, setOk] = useState('');
 
   const cargar = useCallback(async () => {
     try {
@@ -53,14 +45,10 @@ export default function MenuDia() {
 
   useEffect(() => {
     cargar();
-    getAjustesMenu()
-      .then((a) => setDescuento(String(a.descuento_sin_sopa)))
-      .catch(() => {});
   }, [cargar]);
 
   const guardar = async (item, cambios) => {
     setError('');
-    setOk('');
     // Se muestra el cambio al instante y se corrige si el servidor lo rechaza
     setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, ...cambios } : x)));
     try {
@@ -74,25 +62,11 @@ export default function MenuDia() {
 
   const activarTodo = async (valor) => {
     setError('');
-    setOk('');
     try {
       await reiniciarMenu(valor);
       cargar();
     } catch (e) {
       setError(e.response?.data?.error || 'No se pudo actualizar el menú');
-    }
-  };
-
-  const guardarDescuento = async () => {
-    setError('');
-    setOk('');
-    try {
-      const a = await updateAjustesMenu({ descuento_sin_sopa: Number(descuento) || 0 });
-      setDescuento(String(a.descuento_sin_sopa));
-      setOk('Descuento guardado');
-      cargar();
-    } catch (e) {
-      setError(e.response?.data?.error || 'No se pudo guardar el descuento');
     }
   };
 
@@ -137,37 +111,15 @@ export default function MenuDia() {
       </div>
 
       {/* Regla general de la sopa en los ejecutivos */}
-      <div className="bg-papel-card rounded-2xl border border-pizarra-900/10 p-4 space-y-2">
+      <div className="bg-papel-card rounded-2xl border border-pizarra-900/10 p-4 space-y-1">
         <p className="font-semibold">Sopa en los ejecutivos</p>
         <p className="text-sm text-pizarra-900/70">
           Todos los ejecutivos incluyen sopa y principio. El mesero escoge entre las sopas y
-          principios activos hoy. Si el cliente no lleva sopa, se descuenta este valor.
+          principios activos hoy. Si el cliente no lleva sopa, se descuentan $1.000.
         </p>
-        <div className="flex items-center gap-2 flex-wrap">
-          <label htmlFor="descuento" className="text-sm">
-            Descuento si no lleva sopa: $
-          </label>
-          <input
-            id="descuento"
-            type="number"
-            min="0"
-            step="100"
-            value={descuento}
-            onChange={(e) => setDescuento(e.target.value)}
-            className="w-28 px-3 py-2 rounded-lg border border-pizarra-900/20 bg-white"
-          />
-          <button
-            type="button"
-            onClick={guardarDescuento}
-            className="min-h-[44px] px-4 rounded-lg bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 font-semibold text-sm"
-          >
-            Guardar
-          </button>
-        </div>
       </div>
 
       {error && <p className="text-terracota-600 text-sm">{error}</p>}
-      {ok && <p className="text-green-700 text-sm">{ok}</p>}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px] items-start">
         <div className="space-y-5 min-w-0">

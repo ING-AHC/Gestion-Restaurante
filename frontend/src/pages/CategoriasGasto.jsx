@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getCategoriasGasto, createCategoriaGasto, deleteCategoriaGasto } from '../services/categoriaGastoService';
+import { useDialogos } from '../components/dialogosContexto';
+
 function CategoriasGasto() {
+  const { confirmar, avisar } = useDialogos();
   const [categorias, setCategorias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [nombre, setNombre] = useState('');
@@ -35,16 +38,29 @@ function CategoriasGasto() {
       setError(err.response?.data?.error || 'Error al crear la categoría');
     }
   };
-const handleDelete = async (id) => {
-  if (!confirm('¿Seguro que quieres eliminar esta categoría?')) return;
 
-  try {
-    await deleteCategoriaGasto(id);
-    setCategorias((prev) => prev.filter((c) => c.id !== id));
-  } catch (err) {
-    alert(err.response?.data?.error || 'Error al eliminar la categoría');
-  }
-};
+  const handleDelete = async (id) => {
+    const categoria = categorias.find((c) => c.id === id);
+    const seguro = await confirmar({
+      titulo: 'Eliminar categoría',
+      mensaje: `¿Seguro que quieres eliminar "${categoria?.nombre ?? 'esta categoría'}"?`,
+      textoConfirmar: 'Sí, eliminar',
+      peligro: true,
+    });
+    if (!seguro) return;
+
+    try {
+      await deleteCategoriaGasto(id);
+      setCategorias((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      await avisar({
+        titulo: 'No se pudo eliminar',
+        mensaje: err.response?.data?.error || 'Error al eliminar la categoría',
+        peligro: true,
+      });
+    }
+  };
+
   return (
     <div>
       <h2 className="font-display text-2xl font-bold text-pizarra-900 mb-6">

@@ -3,10 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Search, Plus, Trash2, AlertTriangle, ArrowUpDown, Pencil } from 'lucide-react';
 import { getInsumos, createInsumo, deleteInsumo, updateInsumo } from '../services/insumoService';
 import { getCategoriasGasto } from '../services/categoriaGastoService';
+import { useDialogos } from '../components/dialogosContexto';
 
 const STOCK_BAJO_UMBRAL = 5;
 
 function Insumos() {
+  const { confirmar, avisar } = useDialogos();
   const [insumos, setInsumos] = useState([]);
   const [categorias, setCategorias] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -71,13 +73,24 @@ function Insumos() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('¿Seguro que quieres eliminar este insumo?')) return;
+    const insumo = insumos.find((i) => i.id === id);
+    const seguro = await confirmar({
+      titulo: 'Eliminar insumo',
+      mensaje: `¿Seguro que quieres eliminar "${insumo?.nombre ?? 'este insumo'}"?`,
+      textoConfirmar: 'Sí, eliminar',
+      peligro: true,
+    });
+    if (!seguro) return;
 
     try {
       await deleteInsumo(id);
       setInsumos((prev) => prev.filter((i) => i.id !== id));
     } catch (err) {
-      alert(err.response?.data?.error || 'Error al eliminar el insumo');
+      await avisar({
+        titulo: 'No se pudo eliminar',
+        mensaje: err.response?.data?.error || 'Error al eliminar el insumo',
+        peligro: true,
+      });
     }
   };
 

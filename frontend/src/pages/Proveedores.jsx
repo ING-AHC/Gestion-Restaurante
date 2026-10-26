@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { getProveedores, createProveedor, deleteProveedor } from '../services/proveedorService';
+import { useDialogos } from '../components/dialogosContexto';
+
 function Proveedores() {
+  const { confirmar, avisar } = useDialogos();
   const [proveedores, setProveedores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [nombre, setNombre] = useState('');
@@ -37,16 +40,28 @@ function Proveedores() {
       setError(err.response?.data?.error || 'Error al crear el proveedor');
     }
   };
-  const handleDelete = async (id) => {
-  if (!confirm('¿Seguro que quieres eliminar este proveedor?')) return;
 
-  try {
-    await deleteProveedor(id);
-    setProveedores((prev) => prev.filter((p) => p.id !== id));
-  } catch (err) {
-    alert(err.response?.data?.error || 'Error al eliminar el proveedor');
-  }
-};
+  const handleDelete = async (id) => {
+    const proveedor = proveedores.find((p) => p.id === id);
+    const seguro = await confirmar({
+      titulo: 'Eliminar proveedor',
+      mensaje: `¿Seguro que quieres eliminar a "${proveedor?.nombre ?? 'este proveedor'}"?`,
+      textoConfirmar: 'Sí, eliminar',
+      peligro: true,
+    });
+    if (!seguro) return;
+
+    try {
+      await deleteProveedor(id);
+      setProveedores((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      await avisar({
+        titulo: 'No se pudo eliminar',
+        mensaje: err.response?.data?.error || 'Error al eliminar el proveedor',
+        peligro: true,
+      });
+    }
+  };
 
   return (
     <div>

@@ -1,13 +1,28 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Plus, Minus, Send, MessageSquare, Check, X } from 'lucide-react';
-import { crearPedido, getPedidos, cambiarEstado } from '../services/pedidoService';
+import { Plus, Minus, Send, MessageSquare, Check, X, PlusCircle } from 'lucide-react';
+import { crearPedido, agregarItems, getPedidos, cambiarEstado } from '../services/pedidoService';
 import { getMenuHoy } from '../services/menuService';
+import { useDialogos } from '../components/dialogosContexto';
 
 const ESTADOS = {
   pendiente: { texto: 'En cocina', clase: 'bg-pizarra-900/10 text-pizarra-900' },
   en_preparacion: { texto: 'En cocina', clase: 'bg-mostaza-500/30 text-pizarra-950' },
   listo: { texto: 'Entregado · por cobrar', clase: 'bg-green-600 text-white' },
 };
+
+// Descuento fijo por no llevar sopa (el mismo que aplica el servidor)
+const DESCUENTO_SIN_SOPA = 1000;
+
+// Orden en que el mesero ve los tipos de producto
+const ORDEN_TIPOS = ['ejecutivo', 'especial', 'bebida', 'rapida', 'sopa'];
+const TITULOS = {
+  ejecutivo: 'Ejecutivos',
+  especial: 'Especiales',
+  sopa: 'Sopas',
+  bebida: 'Bebidas',
+  rapida: 'Rápidas',
+};
+const posicion = (t) => (ORDEN_TIPOS.includes(t) ? ORDEN_TIPOS.indexOf(t) : ORDEN_TIPOS.length);
 
 const cop = (n) => `${n < 0 ? '−' : ''}$${Math.abs(Number(n)).toLocaleString('es-CO')}`;
 
@@ -24,10 +39,13 @@ export default function Pedidos() {
   const [notas, setNotas] = useState('');
   const [tipoActivo, setTipoActivo] = useState('');
   const [activos, setActivos] = useState([]);
+  const [agregandoA, setAgregandoA] = useState(null); // pedido abierto al que se le suman productos
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
+  const { confirmar } = useDialogos();
   const keyRef = useRef(1);
+  const inicioRef = useRef(null);
 
   const cargarMenu = useCallback((avisar) => {
     getMenuHoy()
@@ -39,7 +57,7 @@ export default function Pedidos() {
 
   useEffect(() => {
     cargarMenu(true);
-    const id = setInterval(() => cargarMenu(false), 60000);
+    const id = setInterval(() => cargarMenu(false), 15000); // las existencias cambian durante el servicio
     return () => clearInterval(id);
   }, [cargarMenu]);
 
@@ -54,14 +72,32 @@ export default function Pedidos() {
     return () => clearInterval(id);
   }, [cargarActivos]);
 
+  // Si escribe una mesa que ya tiene un pedido abierto, se le ofrece sumarle los productos
+  const pedidoDeLaMesa = useMemo(() => {
+    const m = mesa.trim().toLowerCase();
+    if (agregandoA || !m) return null;
+    return activos.find((p) => p.mesa.trim().toLowerCase() === m) || null;
+  }, [activos, mesa, agregandoA]);
+
   // Los principios no se venden solos: se escogen dentro del ejecutivo
   const tipos = useMemo(
-    () => [...new Set(menu.filter((p) => p.tipo !== 'principio').map((p) => p.tipo))],
+    () =>
+      [...new Set(menu.filter((p) => p.tipo !== 'principio').map((p) => p.tipo))].sort(
+        (a, b) => posicion(a) - posicion(b)
+      ),
     [menu]
   );
   useEffect(() => {
     if (tipos.length && !tipos.includes(tipoActivo)) setTipoActivo(tipos[0]);
   }, [tipos, tipoActivo]);
+
+  // Existencias: "disponibles" es null cuando no se sabe cuántas quedan (producto sin receta)
+  const llevaExistencias = (p) => p.disponibles !== null && p.disponibles !== undefined;
+  const enElPedido = (p) =>
+    p.incluye_sopa ? platos.filter((l) => l.producto.id === p.id).length : carrito[p.id]?.cantidad || 0;
+  const sinExistencias = (p) => llevaExistencias(p) && enElPedido(p) >= p.disponibles;
+  const usosSopa = (id) => platos.filter((l) => l.sopa === id).length;
+  const usosPrincipio = (id) => platos.filter((l) => l.principio === id).length;
 
   const sopas = menu.filter((p) => p.tipo === 'sopa');
   const principios = menu.filter((p) => p.tipo === 'principio');
@@ -75,7 +111,7 @@ export default function Pedidos() {
     normales.reduce((s, i) => s + i.cantidad * Number(i.producto.precio), 0) +
     platos.reduce(
       (s, l) =>
-        s + Number(l.producto.precio) - (l.sopa === 'sin' ? Number(l.producto.descuento_sin_sopa) : 0),
+        s + Number(l.producto.precio) - (l.sopa === 'sin' ? DESCUENTO_SIN_SOPA : 0),
       0
     );
 
@@ -100,10 +136,24 @@ export default function Pedidos() {
   const cambiarPlato = (key, cambios) =>
     setPlatos((prev) => prev.map((l) => (l.key === key ? { ...l, ...cambios } : l)));
 
+  const empezarAgregar = (p) => {
+    setError('');
+    setOk('');
+    setAgregandoA({ id: p.id, mesa: p.mesa });
+    setMesa(p.mesa);
+    setNotas('');
+    inicioRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const dejarDeAgregar = () => {
+    setAgregandoA(null);
+    setMesa('');
+  };
+
   const enviar = async () => {
     setError('');
     setOk('');
-    if (!mesa.trim()) return setError('Escribe la mesa');
+    if (!agregandoA && !mesa.trim()) return setError('Escribe la mesa');
     if (totalItems === 0) return setError('Agrega al menos un producto');
     if (faltaSopa) return setError('Escoge la sopa de cada plato, o marca “sin sopa”');
     if (faltaPrincipio) return setError('Escoge el principio de cada plato');
@@ -125,23 +175,37 @@ export default function Pedidos() {
 
     setEnviando(true);
     try {
-      await crearPedido({ mesa: mesa.trim(), notas: notas.trim() || null, items });
+      if (agregandoA) {
+        await agregarItems(agregandoA.id, items);
+        setOk(`Productos agregados a la mesa ${agregandoA.mesa} y enviados a cocina`);
+        setAgregandoA(null);
+      } else {
+        await crearPedido({ mesa: mesa.trim(), notas: notas.trim() || null, items });
+        setOk('Pedido enviado a cocina');
+      }
       setCarrito({});
       setPlatos([]);
       setMesa('');
       setNotas('');
-      setOk('Pedido enviado a cocina');
       cargarActivos();
     } catch (e) {
       setError(e.response?.data?.message || e.response?.data?.error || 'No se pudo enviar el pedido');
+      if (agregandoA && e.response?.status === 409) setAgregandoA(null); // ya no admite más productos
       cargarMenu(false); // por si el menú de hoy cambió
+      cargarActivos();
     } finally {
       setEnviando(false);
     }
   };
 
   const marcarEntregado = async (p) => {
-    if (!window.confirm(`¿Ya entregaste el pedido de la mesa ${p.mesa}?`)) return;
+    const seguro = await confirmar({
+      titulo: 'Entregar pedido',
+      mensaje: `¿Ya entregaste el pedido de la mesa ${p.mesa}? Pasa a caja para cobrarlo.`,
+      textoConfirmar: 'Sí, entregado',
+      textoCancelar: 'Todavía no',
+    });
+    if (!seguro) return;
     setError('');
     try {
       await cambiarEstado(p.id, 'listo');
@@ -152,7 +216,14 @@ export default function Pedidos() {
   };
 
   const cancelar = async (p) => {
-    if (!window.confirm(`¿Cancelar el pedido de la mesa ${p.mesa}?`)) return;
+    const seguro = await confirmar({
+      titulo: 'Cancelar pedido',
+      mensaje: `¿Cancelar el pedido de la mesa ${p.mesa}? Cocina dejará de verlo.`,
+      textoConfirmar: 'Sí, cancelar',
+      textoCancelar: 'No, volver',
+      peligro: true,
+    });
+    if (!seguro) return;
     setError('');
     try {
       await cambiarEstado(p.id, 'cancelado');
@@ -170,12 +241,16 @@ export default function Pedidos() {
         ? 'Falta escoger la sopa'
         : faltaPrincipio
           ? 'Falta escoger el principio'
-          : `Enviar a cocina (${totalItems})`;
+          : agregandoA
+            ? `Agregar al pedido de la mesa ${agregandoA.mesa} (${totalItems})`
+            : `Enviar a cocina (${totalItems})`;
   const bloqueado = enviando || totalItems === 0 || faltaSopa || faltaPrincipio;
 
   return (
     <div className="max-w-xl mx-auto space-y-4 pb-44 md:pb-0">
-      <h1 className="font-display text-2xl text-pizarra-950">Nuevo pedido</h1>
+      <h1 ref={inicioRef} className="font-display text-2xl text-pizarra-950">
+        {agregandoA ? `Agregar a la mesa ${agregandoA.mesa}` : 'Nuevo pedido'}
+      </h1>
 
       {/* Mis pedidos en curso */}
       {activos.length > 0 && (
@@ -192,6 +267,12 @@ export default function Pedidos() {
                   <span className={`text-xs px-2 py-1 rounded-full ${e.clase}`}>{e.texto}</span>
                 </div>
                 <p className="text-sm text-pizarra-900/70">{p.items.map(resumen).join(', ')}</p>
+                <button
+                  onClick={() => empezarAgregar(p)}
+                  className="w-full flex items-center justify-center gap-2 border border-pizarra-900/25 rounded-xl py-3 text-sm font-medium"
+                >
+                  <PlusCircle size={18} /> Agregar productos a esta mesa
+                </button>
                 {enCocina && (
                   <div className="flex gap-2">
                     <button
@@ -219,14 +300,45 @@ export default function Pedidos() {
       )}
 
       {/* Mesa */}
-      <input
-        value={mesa}
-        onChange={(e) => setMesa(e.target.value)}
-        maxLength={30}
-        aria-label="Mesa"
-        placeholder="Mesa (ej: 4, Barra, Domicilio)"
-        className="w-full rounded-xl border border-pizarra-900/20 bg-white px-4 py-3 text-lg"
-      />
+      {agregandoA ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-mostaza-500/25 border border-mostaza-500 px-4 py-3">
+          <p className="text-sm">
+            Estás sumando productos al pedido abierto de la <strong>mesa {agregandoA.mesa}</strong>. Lo nuevo
+            vuelve a cocina.
+          </p>
+          <button
+            onClick={dejarDeAgregar}
+            className="shrink-0 text-sm underline text-pizarra-900/80 min-h-[44px] px-2"
+          >
+            Cancelar
+          </button>
+        </div>
+      ) : (
+        <>
+          <input
+            value={mesa}
+            onChange={(e) => setMesa(e.target.value)}
+            maxLength={30}
+            aria-label="Mesa"
+            placeholder="Mesa (ej: 4, Barra, Domicilio)"
+            className="w-full rounded-xl border border-pizarra-900/20 bg-white px-4 py-3 text-lg"
+          />
+          {pedidoDeLaMesa && (
+            <div className="rounded-xl bg-mostaza-500/25 border border-mostaza-500 px-4 py-3 space-y-2">
+              <p className="text-sm">
+                La mesa {pedidoDeLaMesa.mesa} ya tiene un pedido abierto. ¿Quieres sumarle estos productos en vez de
+                crear otro?
+              </p>
+              <button
+                onClick={() => empezarAgregar(pedidoDeLaMesa)}
+                className="w-full bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 font-semibold rounded-xl py-3 text-sm"
+              >
+                Agregar al pedido de la mesa {pedidoDeLaMesa.mesa}
+              </button>
+            </div>
+          )}
+        </>
+      )}
 
       {menu.length === 0 && (
         <p className="text-pizarra-900/70 text-sm">
@@ -240,13 +352,13 @@ export default function Pedidos() {
           <button
             key={t}
             onClick={() => setTipoActivo(t)}
-            className={`min-h-[44px] px-4 rounded-full whitespace-nowrap text-sm capitalize ${
+            className={`min-h-[44px] px-4 rounded-full whitespace-nowrap text-sm ${
               t === tipoActivo
                 ? 'bg-mostaza-500 text-pizarra-950 font-medium'
                 : 'bg-papel-card border border-pizarra-900/10'
             }`}
           >
-            {t}
+            {TITULOS[t] || t}
           </button>
         ))}
       </div>
@@ -266,6 +378,23 @@ export default function Pedidos() {
                     {p.incluye_sopa && ' · incluye sopa y principio'}
                     {p.tipo === 'sopa' && ' · sopa sola'}
                   </p>
+                  {llevaExistencias(p) && (
+                    <p
+                      className={`text-xs font-semibold ${
+                        p.disponibles - enElPedido(p) <= 0
+                          ? 'text-terracota-600'
+                          : p.disponibles - enElPedido(p) <= 3
+                            ? 'text-mostaza-600'
+                            : 'text-pizarra-900/70'
+                      }`}
+                    >
+                      {p.disponibles === 0
+                        ? 'Agotado'
+                        : p.disponibles - enElPedido(p) <= 0
+                          ? 'No quedan más'
+                          : `Quedan ${p.disponibles - enElPedido(p)}`}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   {p.incluye_sopa ? (
@@ -273,8 +402,9 @@ export default function Pedidos() {
                       {cuantos > 0 && <span className="font-semibold">×{cuantos}</span>}
                       <button
                         onClick={() => agregarPlato(p)}
+                        disabled={sinExistencias(p)}
                         aria-label={`Agregar ${p.nombre}`}
-                        className="w-11 h-11 rounded-full bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 flex items-center justify-center"
+                        className="w-11 h-11 rounded-full bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Plus size={18} />
                       </button>
@@ -295,8 +425,9 @@ export default function Pedidos() {
                       )}
                       <button
                         onClick={() => cambiar(p, 1)}
+                        disabled={sinExistencias(p)}
                         aria-label={`Agregar ${p.nombre}`}
-                        className="w-11 h-11 rounded-full bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 flex items-center justify-center"
+                        className="w-11 h-11 rounded-full bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Plus size={18} />
                       </button>
@@ -327,7 +458,7 @@ export default function Pedidos() {
           <p className="text-sm font-medium text-pizarra-900/70">Ejecutivos del pedido</p>
           {platos.map((l) => {
             const sin = l.sopa === 'sin';
-            const precio = Number(l.producto.precio) - (sin ? Number(l.producto.descuento_sin_sopa) : 0);
+            const precio = Number(l.producto.precio) - (sin ? DESCUENTO_SIN_SOPA : 0);
             return (
               <div key={l.key} className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -349,20 +480,26 @@ export default function Pedidos() {
                     {!l.sopa ? 'Escoge la sopa de este plato' : sin ? 'Sin sopa' : 'Sopa incluida'}
                   </p>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {sopas.map((s) => (
-                      <button
-                        key={s.id}
-                        aria-pressed={l.sopa === s.id}
-                        onClick={() => cambiarPlato(l.key, { sopa: s.id })}
-                        className={`min-h-[44px] px-4 rounded-full text-sm ${
-                          l.sopa === s.id
-                            ? 'bg-mostaza-500 text-pizarra-950 font-semibold'
-                            : 'bg-white border border-pizarra-900/20'
-                        }`}
-                      >
-                        {s.nombre}
-                      </button>
-                    ))}
+                    {sopas.map((s) => {
+                      const quedan = llevaExistencias(s) ? s.disponibles - usosSopa(s.id) : null;
+                      const agotada = quedan !== null && quedan <= 0 && l.sopa !== s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          aria-pressed={l.sopa === s.id}
+                          disabled={agotada}
+                          onClick={() => cambiarPlato(l.key, { sopa: s.id })}
+                          className={`min-h-[44px] px-4 rounded-full text-sm disabled:opacity-40 disabled:cursor-not-allowed ${
+                            l.sopa === s.id
+                              ? 'bg-mostaza-500 text-pizarra-950 font-semibold'
+                              : 'bg-white border border-pizarra-900/20'
+                          }`}
+                        >
+                          {s.nombre}
+                          {quedan !== null && (agotada ? ' · agotada' : ` · quedan ${quedan}`)}
+                        </button>
+                      );
+                    })}
                     <button
                       aria-pressed={sin}
                       onClick={() => cambiarPlato(l.key, { sopa: 'sin' })}
@@ -370,7 +507,7 @@ export default function Pedidos() {
                         sin ? 'bg-pizarra-900 text-white font-semibold' : 'bg-white border border-pizarra-900/20'
                       }`}
                     >
-                      Sin sopa ({cop(-Number(l.producto.descuento_sin_sopa))})
+                      Sin sopa ({cop(-DESCUENTO_SIN_SOPA)})
                     </button>
                   </div>
                   {sopas.length === 0 && (
@@ -386,20 +523,26 @@ export default function Pedidos() {
                       {l.principio ? 'Principio' : 'Escoge el principio de este plato'}
                     </p>
                     <div className="flex flex-wrap gap-2 mt-2">
-                      {principios.map((pr) => (
-                        <button
-                          key={pr.id}
-                          aria-pressed={l.principio === pr.id}
-                          onClick={() => cambiarPlato(l.key, { principio: pr.id })}
-                          className={`min-h-[44px] px-4 rounded-full text-sm ${
-                            l.principio === pr.id
-                              ? 'bg-mostaza-500 text-pizarra-950 font-semibold'
-                              : 'bg-white border border-pizarra-900/20'
-                          }`}
-                        >
-                          {pr.nombre}
-                        </button>
-                      ))}
+                      {principios.map((pr) => {
+                        const quedan = llevaExistencias(pr) ? pr.disponibles - usosPrincipio(pr.id) : null;
+                        const agotado = quedan !== null && quedan <= 0 && l.principio !== pr.id;
+                        return (
+                          <button
+                            key={pr.id}
+                            aria-pressed={l.principio === pr.id}
+                            disabled={agotado}
+                            onClick={() => cambiarPlato(l.key, { principio: pr.id })}
+                            className={`min-h-[44px] px-4 rounded-full text-sm disabled:opacity-40 disabled:cursor-not-allowed ${
+                              l.principio === pr.id
+                                ? 'bg-mostaza-500 text-pizarra-950 font-semibold'
+                                : 'bg-white border border-pizarra-900/20'
+                            }`}
+                          >
+                            {pr.nombre}
+                            {quedan !== null && (agotado ? ' · agotado' : ` · quedan ${quedan}`)}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -420,14 +563,16 @@ export default function Pedidos() {
         </div>
       )}
 
-      <textarea
-        value={notas}
-        onChange={(e) => setNotas(e.target.value)}
-        rows={2}
-        aria-label="Nota general del pedido"
-        placeholder="Nota general del pedido (opcional)"
-        className="w-full rounded-xl border border-pizarra-900/20 bg-white px-4 py-3 text-sm"
-      />
+      {!agregandoA && (
+        <textarea
+          value={notas}
+          onChange={(e) => setNotas(e.target.value)}
+          rows={2}
+          aria-label="Nota general del pedido"
+          placeholder="Nota general del pedido (opcional)"
+          className="w-full rounded-xl border border-pizarra-900/20 bg-white px-4 py-3 text-sm"
+        />
+      )}
 
       {error && <p className="text-terracota-600 text-sm">{error}</p>}
       {ok && <p className="text-green-700 text-sm">{ok}</p>}
@@ -436,7 +581,7 @@ export default function Pedidos() {
       <div className="fixed bottom-0 inset-x-0 p-4 bg-papel-card/95 backdrop-blur border-t border-pizarra-900/10 md:static md:p-0 md:border-0 md:bg-transparent">
         <div className="max-w-xl mx-auto space-y-2">
           <div className="flex justify-between text-sm">
-            <span>Total del pedido</span>
+            <span>{agregandoA ? 'Total de lo que agregas' : 'Total del pedido'}</span>
             <strong>{cop(totalPrecio)}</strong>
           </div>
           <button

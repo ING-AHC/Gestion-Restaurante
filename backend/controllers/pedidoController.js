@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { ErrorNegocio, registrarVenta } = require('../services/ventaService');
+const { DESCUENTO_SIN_SOPA } = require('./menuController');
 
 const ESTADOS_ACTIVOS = ['pendiente', 'en_preparacion', 'listo'];
 const TODOS_LOS_ESTADOS = ['pendiente', 'en_preparacion', 'listo', 'entregado', 'cancelado'];
@@ -24,23 +25,13 @@ const manejarError = async (error, res, client, mensaje) => {
   res.status(500).json({ error: mensaje });
 };
 
-// Mesero: crea un pedido. No toca inventario ni ventas.
-const createPedido = async (req, res) => {
-  const userId = req.userId;
-  const mesa = String(req.body.mesa ?? '').trim();
-  const notas = req.body.notas ? String(req.body.notas).trim() : null;
-  const { items } = req.body;
-
-  if (!mesa || mesa.length > 30) {
-    return res.status(400).json({ error: 'La mesa es obligatoria (máximo 30 caracteres)' });
-  }
-
+// Valida y normaliza la lista de productos que manda el mesero.
+const leerItems = (items) => {
   if (!Array.isArray(items) || items.length === 0 || items.length > 50) {
-    return res.status(400).json({ error: 'El pedido debe tener entre 1 y 50 productos' });
+    throw new ErrorNegocio(400, 'El pedido debe tener entre 1 y 50 productos');
   }
 
-  const lineas = [];
-  for (const item of items) {
+  return items.map((item) => {
     const productoId = Number(item.producto_id);
     const cantidad = Number(item.cantidad ?? 1);
 
@@ -48,107 +39,188 @@ const createPedido = async (req, res) => {
       !Number.isInteger(productoId) || productoId <= 0 ||
       !Number.isInteger(cantidad) || cantidad < 1 || cantidad > 100
     ) {
-      return res.status(400).json({ error: 'Producto o cantidad no válidos en el pedido' });
+      throw new ErrorNegocio(400, 'Producto o cantidad no válidos en el pedido');
     }
 
     const sopaId = item.sopa_id ? Number(item.sopa_id) : null;
     if (sopaId !== null && (!Number.isInteger(sopaId) || sopaId <= 0)) {
-      return res.status(400).json({ error: 'Sopa no válida en el pedido' });
+      throw new ErrorNegocio(400, 'Sopa no válida en el pedido');
     }
 
     const principioId = item.principio_id ? Number(item.principio_id) : null;
     if (principioId !== null && (!Number.isInteger(principioId) || principioId <= 0)) {
-      return res.status(400).json({ error: 'Principio no válido en el pedido' });
+      throw new ErrorNegocio(400, 'Principio no válido en el pedido');
     }
 
     const nota = item.nota ? String(item.nota).trim().slice(0, 255) : null;
-    lineas.push({ productoId, cantidad, nota, sopaId, principioId, sinSopa: item.sin_sopa === true });
+    return { productoId, cantidad, nota, sopaId, principioId, sinSopa: item.sin_sopa === true };
+  });
+};
+
+// Revisa contra la base que los productos existan, estén activos hoy y cumplan las reglas del ejecutivo.
+// Corrige en la propia línea lo que no aplica (por ejemplo, la sopa de un producto que no es ejecutivo).
+const validarLineas = async (client, userId, lineas) => {
+  // Todo ejecutivo incluye sopa: la regla sale del tipo del producto
+  const ids = [...new Set(lineas.map((l) => l.productoId))];
+  const productos = await client.query(
+    `SELECT id, nombre, disponible_hoy, (tipo = 'ejecutivo') AS incluye_sopa
+     FROM productos WHERE id = ANY($1::int[]) AND user_id = $2`,
+    [ids, userId]
+  );
+  if (productos.rows.length !== ids.length) {
+    throw new ErrorNegocio(404, 'Alguno de los productos no existe');
+  }
+  const porId = new Map(productos.rows.map((p) => [p.id, p]));
+
+  // Sopas escogidas: deben ser sopas del restaurante y estar disponibles hoy
+  const sopaIds = [...new Set(lineas.map((l) => l.sopaId).filter(Boolean))];
+  let sopasValidas = new Set();
+  if (sopaIds.length > 0) {
+    const sopas = await client.query(
+      `SELECT id FROM productos
+       WHERE id = ANY($1::int[]) AND user_id = $2 AND tipo = 'sopa' AND disponible_hoy`,
+      [sopaIds, userId]
+    );
+    sopasValidas = new Set(sopas.rows.map((s) => s.id));
+  }
+
+  // Principios activos hoy: si hay, cada ejecutivo debe llevar uno
+  const principios = await client.query(
+    `SELECT id FROM productos WHERE user_id = $1 AND tipo = 'principio' AND disponible_hoy`,
+    [userId]
+  );
+  const principiosHoy = new Set(principios.rows.map((r) => r.id));
+
+  for (const l of lineas) {
+    const p = porId.get(l.productoId);
+
+    if (!p.disponible_hoy) {
+      throw new ErrorNegocio(409, `"${p.nombre}" no está disponible hoy`);
+    }
+
+    if (p.incluye_sopa) {
+      if (l.cantidad !== 1) {
+        throw new ErrorNegocio(400, `"${p.nombre}" se pide de a uno, para escoger la sopa de cada plato`);
+      }
+      if (l.sinSopa) {
+        l.sopaId = null;
+      } else if (!l.sopaId || !sopasValidas.has(l.sopaId)) {
+        throw new ErrorNegocio(400, `Escoge la sopa de "${p.nombre}" o marca "sin sopa"`);
+      }
+
+      if (principiosHoy.size > 0) {
+        if (!l.principioId || !principiosHoy.has(l.principioId)) {
+          throw new ErrorNegocio(400, `Escoge el principio de "${p.nombre}"`);
+        }
+      } else {
+        l.principioId = null;
+      }
+    } else {
+      l.sopaId = null;
+      l.principioId = null;
+      l.sinSopa = false;
+    }
+  }
+};
+
+const insertarLineas = async (client, pedidoId, lineas, agregado) => {
+  for (const l of lineas) {
+    await client.query(
+      `INSERT INTO pedido_detalle (pedido_id, producto_id, cantidad, nota, sopa_id, principio_id, sin_sopa, agregado)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [pedidoId, l.productoId, l.cantidad, l.nota, l.sopaId, l.principioId, l.sinSopa, agregado]
+    );
+  }
+};
+
+// Mesero: crea un pedido. No toca inventario ni ventas.
+const createPedido = async (req, res) => {
+  const userId = req.userId;
+  const mesa = String(req.body.mesa ?? '').trim();
+  const notas = req.body.notas ? String(req.body.notas).trim() : null;
+
+  if (!mesa || mesa.length > 30) {
+    return res.status(400).json({ error: 'La mesa es obligatoria (máximo 30 caracteres)' });
   }
 
   const client = await pool.connect();
 
   try {
+    const lineas = leerItems(req.body.items);
+
     await client.query('BEGIN');
-
-    // Todo ejecutivo incluye sopa: la regla sale del tipo del producto
-    const ids = [...new Set(lineas.map((l) => l.productoId))];
-    const productos = await client.query(
-      `SELECT id, nombre, disponible_hoy, (tipo = 'ejecutivo') AS incluye_sopa
-       FROM productos WHERE id = ANY($1::int[]) AND user_id = $2`,
-      [ids, userId]
-    );
-    if (productos.rows.length !== ids.length) {
-      throw new ErrorNegocio(404, 'Alguno de los productos no existe');
-    }
-    const porId = new Map(productos.rows.map((p) => [p.id, p]));
-
-    // Sopas escogidas: deben ser sopas del restaurante y estar disponibles hoy
-    const sopaIds = [...new Set(lineas.map((l) => l.sopaId).filter(Boolean))];
-    let sopasValidas = new Set();
-    if (sopaIds.length > 0) {
-      const sopas = await client.query(
-        `SELECT id FROM productos
-         WHERE id = ANY($1::int[]) AND user_id = $2 AND tipo = 'sopa' AND disponible_hoy`,
-        [sopaIds, userId]
-      );
-      sopasValidas = new Set(sopas.rows.map((s) => s.id));
-    }
-
-    // Principios activos hoy: si hay, cada ejecutivo debe llevar uno
-    const principios = await client.query(
-      `SELECT id FROM productos WHERE user_id = $1 AND tipo = 'principio' AND disponible_hoy`,
-      [userId]
-    );
-    const principiosHoy = new Set(principios.rows.map((r) => r.id));
-
-    for (const l of lineas) {
-      const p = porId.get(l.productoId);
-
-      if (!p.disponible_hoy) {
-        throw new ErrorNegocio(409, `"${p.nombre}" no está disponible hoy`);
-      }
-
-      if (p.incluye_sopa) {
-        if (l.cantidad !== 1) {
-          throw new ErrorNegocio(400, `"${p.nombre}" se pide de a uno, para escoger la sopa de cada plato`);
-        }
-        if (l.sinSopa) {
-          l.sopaId = null;
-        } else if (!l.sopaId || !sopasValidas.has(l.sopaId)) {
-          throw new ErrorNegocio(400, `Escoge la sopa de "${p.nombre}" o marca "sin sopa"`);
-        }
-
-        if (principiosHoy.size > 0) {
-          if (!l.principioId || !principiosHoy.has(l.principioId)) {
-            throw new ErrorNegocio(400, `Escoge el principio de "${p.nombre}"`);
-          }
-        } else {
-          l.principioId = null;
-        }
-      } else {
-        l.sopaId = null;
-        l.principioId = null;
-        l.sinSopa = false;
-      }
-    }
+    await validarLineas(client, userId, lineas);
 
     const pedido = await client.query(
       `INSERT INTO pedidos (user_id, mesa, notas, creado_por) VALUES ($1, $2, $3, $4) RETURNING *`,
       [userId, mesa, notas, req.actorId]
     );
-
-    for (const l of lineas) {
-      await client.query(
-        `INSERT INTO pedido_detalle (pedido_id, producto_id, cantidad, nota, sopa_id, principio_id, sin_sopa)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [pedido.rows[0].id, l.productoId, l.cantidad, l.nota, l.sopaId, l.principioId, l.sinSopa]
-      );
-    }
+    await insertarLineas(client, pedido.rows[0].id, lineas, false);
 
     await client.query('COMMIT');
     res.status(201).json(pedido.rows[0]);
   } catch (error) {
     await manejarError(error, res, client, 'Error al crear el pedido');
+  } finally {
+    client.release();
+  }
+};
+
+// Mesero o caja: agrega productos a un pedido que todavía no se ha cobrado.
+// Si ya estaba entregado, vuelve a cocina como pendiente para que preparen lo nuevo.
+const agregarItems = async (req, res) => {
+  const userId = req.userId;
+  const id = Number(req.params.id);
+  const soloDe = req.rol === 'mesero' ? req.actorId : null;
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'Pedido no válido' });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const lineas = leerItems(req.body.items);
+
+    await client.query('BEGIN');
+
+    // FOR UPDATE: si caja cobra al mismo tiempo, uno de los dos espera al otro
+    const pedidoResult = await client.query(
+      `SELECT * FROM pedidos
+       WHERE id = $1 AND user_id = $2 AND ($3::int IS NULL OR creado_por = $3)
+       FOR UPDATE`,
+      [id, userId, soloDe]
+    );
+    if (pedidoResult.rows.length === 0) {
+      throw new ErrorNegocio(404, 'Pedido no encontrado');
+    }
+
+    const pedido = pedidoResult.rows[0];
+    if (pedido.venta_id || !ESTADOS_ACTIVOS.includes(pedido.estado)) {
+      throw new ErrorNegocio(409, 'Este pedido ya no admite más productos: ábrelo como pedido nuevo');
+    }
+
+    const total = await client.query('SELECT COUNT(*) FROM pedido_detalle WHERE pedido_id = $1', [id]);
+    if (Number(total.rows[0].count) + lineas.length > 100) {
+      throw new ErrorNegocio(400, 'El pedido ya tiene demasiados productos');
+    }
+
+    await validarLineas(client, userId, lineas);
+    await insertarLineas(client, id, lineas, true);
+
+    const actualizado = await client.query(
+      `UPDATE pedidos
+       SET estado = CASE WHEN estado = 'listo' THEN 'pendiente' ELSE estado END,
+           actualizado_en = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json(actualizado.rows[0]);
+  } catch (error) {
+    await manejarError(error, res, client, 'Error al agregar productos al pedido');
   } finally {
     client.release();
   }
@@ -183,7 +255,8 @@ const getPedidos = async (req, res) => {
                'sopa_nombre', sp.nombre,
                'principio_nombre', pp.nombre,
                'sin_sopa', d.sin_sopa,
-               'ajuste', CASE WHEN d.sin_sopa THEN -COALESCE(aj.descuento_sin_sopa, 1000) ELSE 0 END
+               'agregado', d.agregado,
+               'ajuste', CASE WHEN d.sin_sopa THEN -${DESCUENTO_SIN_SOPA} ELSE 0 END
              ) ORDER BY d.id
            ) FILTER (WHERE d.id IS NOT NULL),
            '[]'
@@ -194,7 +267,6 @@ const getPedidos = async (req, res) => {
        LEFT JOIN productos pr ON pr.id = d.producto_id
        LEFT JOIN productos sp ON sp.id = d.sopa_id
        LEFT JOIN productos pp ON pp.id = d.principio_id
-       LEFT JOIN ajustes_menu aj ON aj.user_id = p.user_id
        WHERE p.user_id = $1
          AND p.estado = ANY($2::text[])
          AND ($3::int IS NULL OR p.creado_por = $3)
@@ -305,15 +377,13 @@ const confirmarPedido = async (req, res) => {
     }
 
     const detalle = await client.query(
-      `SELECT d.producto_id, d.cantidad, d.nota, d.sin_sopa,
+      `SELECT d.producto_id, d.cantidad, d.nota, d.sin_sopa, d.sopa_id, d.principio_id,
               sp.nombre AS sopa_nombre,
-              pp.nombre AS principio_nombre,
-              COALESCE(aj.descuento_sin_sopa, 1000) AS descuento_sin_sopa
+              pp.nombre AS principio_nombre
        FROM pedido_detalle d
        JOIN productos pr ON pr.id = d.producto_id
        LEFT JOIN productos sp ON sp.id = d.sopa_id
        LEFT JOIN productos pp ON pp.id = d.principio_id
-       LEFT JOIN ajustes_menu aj ON aj.user_id = pr.user_id
        WHERE d.pedido_id = $1
        ORDER BY d.id`,
       [id]
@@ -322,7 +392,7 @@ const confirmarPedido = async (req, res) => {
       throw new ErrorNegocio(409, 'El pedido no tiene productos');
     }
 
-    // La sopa y el principio escogidos quedan anotados; "sin sopa" entra como descuento en la línea
+    // La sopa y el principio escogidos quedan anotados; "sin sopa" entra como descuento fijo en la línea
     const items = detalle.rows.map((d) => {
       const partes = [
         d.sin_sopa ? 'Sin sopa' : d.sopa_nombre ? `Sopa: ${d.sopa_nombre}` : null,
@@ -334,7 +404,9 @@ const confirmarPedido = async (req, res) => {
         producto_id: d.producto_id,
         cantidad: d.cantidad,
         adicion_descripcion: partes.length ? partes.join(' · ').slice(0, 255) : null,
-        adicion_valor: d.sin_sopa ? -Number(d.descuento_sin_sopa) : 0,
+        adicion_valor: d.sin_sopa ? -DESCUENTO_SIN_SOPA : 0,
+        // La sopa y el principio escogidos gastan sus propios insumos
+        consumos_extra: [d.sopa_id, d.principio_id].filter(Boolean),
       };
     });
 
@@ -357,4 +429,4 @@ const confirmarPedido = async (req, res) => {
   }
 };
 
-module.exports = { createPedido, getPedidos, updateEstado, confirmarPedido };
+module.exports = { createPedido, agregarItems, getPedidos, updateEstado, confirmarPedido };

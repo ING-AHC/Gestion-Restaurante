@@ -5,8 +5,28 @@ class ErrorNegocio extends Error {
   }
 }
 
+const TIPOS_CON_RECETA = ['especial', 'rapida', 'ejecutivo', 'sopa', 'principio'];
+
+// Descuenta del inventario lo que lleva la receta de un producto
+const descontarReceta = async (client, userId, productoId, cantidad) => {
+  const receta = await client.query('SELECT * FROM plato_insumos WHERE producto_id = $1', [productoId]);
+
+  for (const recetaItem of receta.rows) {
+    const cantidadADescontar = Math.round(recetaItem.cantidad_usada * cantidad * 100) / 100;
+    await client.query(
+      `UPDATE insumos SET cantidad_actual = cantidad_actual - $1 WHERE id = $2 AND user_id = $3`,
+      [cantidadADescontar, recetaItem.insumo_id, userId]
+    );
+  }
+};
+
 // Registra una venta dentro de una transacción que ya está abierta.
 // No hace BEGIN ni COMMIT: eso lo decide quien la llama.
+//
+// Cada línea es una de dos cosas:
+//  - un producto del menú: { producto_id, cantidad, adicion_descripcion, adicion_valor, consumos_extra }
+//    "consumos_extra" son productos que se gastan sin cobrarse aparte (la sopa y el principio de un ejecutivo)
+//  - un servicio que no es un producto: { concepto, precio, cantidad }. No toca el inventario.
 const registrarVenta = async (client, userId, { tipo, fecha, items }) => {
   const ventaResult = await client.query(
     `INSERT INTO ventas (tipo, fecha, user_id)
@@ -17,6 +37,18 @@ const registrarVenta = async (client, userId, { tipo, fecha, items }) => {
   const ventaId = ventaResult.rows[0].id;
 
   for (const item of items) {
+    const cantidadVendida = item.cantidad === undefined ? 1 : Number(item.cantidad);
+
+    // Servicio libre: solo se anota con su nombre y su valor
+    if (item.producto_id === undefined || item.producto_id === null || item.producto_id === '') {
+      await client.query(
+        `INSERT INTO venta_detalle (venta_id, producto_id, concepto, cantidad, precio_unitario, adicion_descripcion, adicion_valor)
+         VALUES ($1, NULL, $2, $3, $4, NULL, 0)`,
+        [ventaId, item.concepto, cantidadVendida, item.precio]
+      );
+      continue;
+    }
+
     const productoResult = await client.query(
       'SELECT * FROM productos WHERE id = $1 AND user_id = $2',
       [item.producto_id, userId]
@@ -27,7 +59,6 @@ const registrarVenta = async (client, userId, { tipo, fecha, items }) => {
     }
 
     const producto = productoResult.rows[0];
-    const cantidadVendida = item.cantidad === undefined ? 1 : Number(item.cantidad);
 
     await client.query(
       `INSERT INTO venta_detalle (venta_id, producto_id, cantidad, precio_unitario, adicion_descripcion, adicion_valor)
@@ -42,25 +73,25 @@ const registrarVenta = async (client, userId, { tipo, fecha, items }) => {
       ]
     );
 
-    if (producto.tipo === 'especial' || producto.tipo === 'rapida' || producto.tipo === 'ejecutivo' || producto.tipo === 'sopa' || producto.tipo === 'principio') {
-      const receta = await client.query(
-        'SELECT * FROM plato_insumos WHERE producto_id = $1',
-        [item.producto_id]
-      );
-
-      for (const recetaItem of receta.rows) {
-        const cantidadADescontar = Math.round(recetaItem.cantidad_usada * cantidadVendida * 100) / 100;
-        await client.query(
-          `UPDATE insumos SET cantidad_actual = cantidad_actual - $1 WHERE id = $2 AND user_id = $3`,
-          [cantidadADescontar, recetaItem.insumo_id, userId]
-        );
-      }
+    if (TIPOS_CON_RECETA.includes(producto.tipo)) {
+      await descontarReceta(client, userId, item.producto_id, cantidadVendida);
     } else if (producto.tipo === 'bebida' && producto.insumo_id) {
       // La bebida solo descuenta inventario si tiene un insumo ligado (es opcional)
       await client.query(
         `UPDATE insumos SET cantidad_actual = cantidad_actual - $1 WHERE id = $2 AND user_id = $3`,
         [cantidadVendida, producto.insumo_id, userId]
       );
+    }
+
+    // La sopa y el principio de un ejecutivo gastan sus propios insumos
+    for (const extraId of item.consumos_extra || []) {
+      const extra = await client.query(
+        'SELECT tipo FROM productos WHERE id = $1 AND user_id = $2',
+        [extraId, userId]
+      );
+      if (extra.rows.length > 0 && TIPOS_CON_RECETA.includes(extra.rows[0].tipo)) {
+        await descontarReceta(client, userId, extraId, cantidadVendida);
+      }
     }
   }
 

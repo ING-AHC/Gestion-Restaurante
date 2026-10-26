@@ -23,6 +23,12 @@ app.use(
 );
 app.use(express.json());
 
+// Express 5 deja req.body vacío (undefined) cuando la petición no trae cuerpo
+app.use((req, res, next) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
+
 // Máximo 20 intentos de login o registro por IP cada 15 minutos
 const limiteAuth = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -54,6 +60,8 @@ const personalRoutes = require('./routes/personalRoutes');
 app.use('/api/personal', personalRoutes);
 const menuRoutes = require('./routes/menuRoutes');
 app.use('/api/menu', menuRoutes);
+const pedidoRoutes = require('./routes/pedidoRoutes');
+app.use('/api/pedidos', pedidoRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Servidor de Gestión Restaurante funcionando 🚀' });
@@ -69,8 +77,11 @@ app.get('/test-db', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en el puerto ${PORT}`);
-});
-const pedidoRoutes = require('./routes/pedidoRoutes');
-app.use('/api/pedidos', pedidoRoutes);
+// Solo abre el puerto cuando se ejecuta directamente (las pruebas importan la app sin levantar el servidor)
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Servidor corriendo en el puerto ${PORT}`);
+  });
+}
+
+module.exports = app;

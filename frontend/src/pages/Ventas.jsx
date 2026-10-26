@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Receipt, CalendarDays } from 'lucide-react';
 import { getVentas, createVenta } from '../services/ventaService';
 import { getProductos } from '../services/productoService';
+import InputMoneda from '../components/InputMoneda';
 
 function Ventas() {
   const [ventas, setVentas] = useState([]);
@@ -47,11 +48,29 @@ function Ventas() {
     ]);
   };
 
+  // Un servicio es algo que se cobra y no es un producto del menú (por ejemplo, asar una carne)
+  const addServicioRow = () => {
+    setItems((prev) => [...prev, { servicio: true, concepto: '', precio: '', cantidad: '1' }]);
+  };
+
+  // Servicios que ya se han cobrado antes: se sugieren al escribir
+  const serviciosPrevios = useMemo(
+    () => [
+      ...new Set(
+        ventas.flatMap((v) => v.items.filter((it) => it.es_servicio).map((it) => it.producto_nombre))
+      ),
+    ],
+    [ventas]
+  );
+
   const removeItemRow = (index) => {
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const totalVenta = items.reduce((total, item) => {
+    if (item.servicio) {
+      return total + (parseFloat(item.precio) || 0) * (parseInt(item.cantidad) || 0);
+    }
     const producto = getProducto(item.producto_id);
     if (!producto) return total;
     const subtotalProducto = parseFloat(producto.precio) * (parseInt(item.cantidad) || 0);
@@ -72,12 +91,20 @@ function Ventas() {
       const payload = {
         tipo: tipoVenta,
         fecha: fechaVenta,
-        items: items.map((item) => ({
-          producto_id: item.producto_id,
-          cantidad: parseInt(item.cantidad),
-          adicion_descripcion: item.adicion_descripcion || null,
-          adicion_valor: parseFloat(item.adicion_valor) || 0,
-        })),
+        items: items.map((item) =>
+          item.servicio
+            ? {
+                concepto: item.concepto.trim(),
+                precio: parseFloat(item.precio),
+                cantidad: parseInt(item.cantidad),
+              }
+            : {
+                producto_id: item.producto_id,
+                cantidad: parseInt(item.cantidad),
+                adicion_descripcion: item.adicion_descripcion || null,
+                adicion_valor: parseFloat(item.adicion_valor) || 0,
+              }
+        ),
       };
 
       await createVenta(payload);
@@ -159,16 +186,75 @@ function Ventas() {
           <div className="border-t border-pizarra-900/10 pt-4 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-sm font-semibold text-pizarra-800">Productos de la venta</label>
-              <button
-                type="button"
-                onClick={addItemRow}
-                className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
-              >
-                + Agregar producto
-              </button>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={addItemRow}
+                  className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
+                >
+                  + Agregar producto
+                </button>
+                <button
+                  type="button"
+                  onClick={addServicioRow}
+                  className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
+                >
+                  + Otro servicio
+                </button>
+              </div>
             </div>
+            <datalist id="servicios-previos">
+              {serviciosPrevios.map((nombre) => (
+                <option key={nombre} value={nombre} />
+              ))}
+            </datalist>
 
-            {items.map((item, index) => (
+            {items.map((item, index) =>
+              item.servicio ? (
+                <div key={index} className="bg-papel rounded-xl p-3 space-y-2 border border-mostaza-500/40">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-mostaza-600">Servicio (no es un producto)</span>
+                    {items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeItemRow(index)}
+                        className="text-terracota-500 hover:text-terracota-600 text-sm px-1"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    list="servicios-previos"
+                    placeholder="¿Qué servicio es? (ej: asar una carne)"
+                    value={item.concepto}
+                    onChange={(e) => updateItem(index, 'concepto', e.target.value)}
+                    maxLength={150}
+                    required
+                    className="w-full px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
+                  />
+                  <div className="flex gap-2 items-center">
+                    <span className="text-sm text-pizarra-700">$</span>
+                    <InputMoneda
+                      value={item.precio}
+                      onChange={(valor) => updateItem(index, 'precio', valor)}
+                      placeholder="Valor"
+                      required
+                      className="flex-1 px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      value={item.cantidad}
+                      onChange={(e) => updateItem(index, 'cantidad', e.target.value)}
+                      required
+                      aria-label="Cantidad"
+                      className="w-16 px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
+                    />
+                  </div>
+                </div>
+              ) : (
               <div key={index} className="bg-papel rounded-xl p-3 space-y-2">
                 <div className="flex gap-2 items-center">
                   <select
@@ -236,7 +322,8 @@ function Ventas() {
                   />
                 </div>
               </div>
-            ))}
+              )
+            )}
           </div>
 
           <div className="flex items-center justify-between border-t border-pizarra-900/10 pt-4">
@@ -314,6 +401,11 @@ function Ventas() {
                     {venta.items.map((it, i) => (
                       <div key={i}>
                         <p>
+                          {it.es_servicio && (
+                            <span className="mr-1 px-1.5 py-0.5 rounded bg-mostaza-500/15 text-mostaza-600 font-semibold">
+                              Servicio
+                            </span>
+                          )}
                           {it.producto_nombre} x{it.cantidad} · $
                           {(it.cantidad * parseFloat(it.precio_unitario)).toLocaleString()}
                         </p>

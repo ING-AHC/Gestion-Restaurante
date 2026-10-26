@@ -10,6 +10,11 @@ export const crearPedido = async (data) => {
   return response.data;
 };
 
+export const agregarItems = async (id, items) => {
+  const response = await api.post(`/pedidos/${id}/items`, { items });
+  return response.data;
+};
+
 export const getPedidos = async (estado) => {
   const response = await api.get('/pedidos', { params: estado ? { estado } : {} });
   return response.data;

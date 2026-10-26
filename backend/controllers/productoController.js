@@ -2,13 +2,34 @@
 
 const TIPOS_VALIDOS = ['especial', 'rapida', 'ejecutivo', 'bebida', 'sopa', 'principio'];
 
+// Dos productos no pueden llamarse igual en un mismo restaurante (sin importar mayúsculas ni espacios)
+const mensajeRepetido = (nombre) => `Ya existe un producto llamado "${nombre}"`;
+
+const existeNombre = async (userId, nombre, exceptoId = null) => {
+  const { rows } = await pool.query(
+    `SELECT id FROM productos
+     WHERE user_id = $1 AND LOWER(BTRIM(nombre)) = LOWER($2) AND ($3::int IS NULL OR id <> $3)`,
+    [userId, nombre, exceptoId]
+  );
+  return rows.length > 0;
+};
+
 const createProducto = async (req, res) => {
-  const { nombre, tipo, precio, insumo_id } = req.body;
+  const { tipo, precio, insumo_id } = req.body;
+  const nombre = String(req.body.nombre ?? '').trim();
   const userId = req.userId;
 
   try {
     if (!nombre || !tipo || !precio) {
       return res.status(400).json({ error: 'Nombre, tipo y precio son obligatorios' });
+    }
+
+    if (nombre.length > 100) {
+      return res.status(400).json({ error: 'El nombre puede tener máximo 100 caracteres' });
+    }
+
+    if (await existeNombre(userId, nombre)) {
+      return res.status(409).json({ error: mensajeRepetido(nombre) });
     }
 
     if (!TIPOS_VALIDOS.includes(tipo)) {
@@ -42,6 +63,9 @@ const createProducto = async (req, res) => {
 
     res.status(201).json(newProducto.rows[0]);
   } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ error: mensajeRepetido(nombre) });
+    }
     console.error(error);
     res.status(500).json({ error: 'Error en el servidor' });
   }
@@ -82,10 +106,23 @@ const getProductos = async (req, res) => {
 
 const updateProducto = async (req, res) => {
   const { id } = req.params;
-  const { nombre, precio } = req.body;
+  const { precio } = req.body;
+  const nombre = req.body.nombre === undefined || req.body.nombre === null ? null : String(req.body.nombre).trim();
   const userId = req.userId;
 
+  if (!Number.isInteger(Number(id))) {
+    return res.status(400).json({ error: 'Identificador no válido' });
+  }
+
+  if (nombre !== null && (!nombre || nombre.length > 100)) {
+    return res.status(400).json({ error: 'El nombre es obligatorio (máximo 100 caracteres)' });
+  }
+
   try {
+    if (nombre !== null && (await existeNombre(userId, nombre, Number(id)))) {
+      return res.status(409).json({ error: mensajeRepetido(nombre) });
+    }
+
     const updated = await pool.query(
       `UPDATE productos
        SET nombre = COALESCE($1, nombre), precio = COALESCE($2, precio)
@@ -100,6 +137,9 @@ const updateProducto = async (req, res) => {
 
     res.json(updated.rows[0]);
   } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ error: mensajeRepetido(nombre) });
+    }
     console.error(error);
     res.status(500).json({ error: 'Error al actualizar el producto' });
   }

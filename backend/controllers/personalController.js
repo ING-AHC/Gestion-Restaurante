@@ -65,6 +65,9 @@ const crearPersonal = async (req, res) => {
     res.status(201).json(rows[0]);
   } catch (error) {
     if (error.code === '23505') {
+      if (error.constraint === 'personal_nombre_unico') {
+        return res.status(409).json({ error: `Ya hay alguien del personal llamado "${nombre}"` });
+      }
       return res.status(409).json({ error: 'Ese usuario ya existe, elige otro' });
     }
     console.error(error);

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Receipt, X } from 'lucide-react';
 import { getPedidos, cambiarEstado, confirmarPedido } from '../services/pedidoService';
+import { useDialogos } from '../components/dialogosContexto';
 
 const cop = (n) => `${n < 0 ? '−' : ''}$${Math.abs(Number(n)).toLocaleString('es-CO')}`;
 const total = (p) =>
@@ -10,6 +11,7 @@ export default function Caja() {
   const [pedidos, setPedidos] = useState([]);
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(null);
+  const { confirmar } = useDialogos();
 
   const cargar = useCallback(async () => {
     try {
@@ -39,7 +41,14 @@ export default function Caja() {
   };
 
   const cancelar = async (p) => {
-    if (!window.confirm(`¿Cancelar el pedido de la mesa ${p.mesa}?`)) return;
+    const seguro = await confirmar({
+      titulo: 'Cancelar pedido',
+      mensaje: `¿Cancelar el pedido de la mesa ${p.mesa}? No se podrá cobrar.`,
+      textoConfirmar: 'Sí, cancelar',
+      textoCancelar: 'No, volver',
+      peligro: true,
+    });
+    if (!seguro) return;
     try {
       await cambiarEstado(p.id, 'cancelado');
     } catch (e) {

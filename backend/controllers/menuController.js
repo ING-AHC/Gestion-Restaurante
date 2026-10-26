@@ -1,13 +1,14 @@
 const pool = require('../config/db');
 
-// "Incluye sopa" ya no se guarda por plato: todo ejecutivo la incluye.
-// El descuento es uno solo por restaurante (1000 si no se ha configurado).
+// "Incluye sopa" no se guarda por plato: todo ejecutivo la incluye.
+// El descuento por no llevar sopa es siempre de mil pesos.
+const DESCUENTO_SIN_SOPA = 1000;
+
 const SELECT_MENU = `
   SELECT p.id, p.nombre, p.tipo, p.precio, p.disponible_hoy, p.es_sopa,
          (p.tipo = 'ejecutivo') AS incluye_sopa,
-         COALESCE(a.descuento_sin_sopa, 1000) AS descuento_sin_sopa
-  FROM productos p
-  LEFT JOIN ajustes_menu a ON a.user_id = p.user_id`;
+         ${DESCUENTO_SIN_SOPA}::int AS descuento_sin_sopa
+  FROM productos p`;
 
 const soloAdmin = (req, res) => {
   if (req.rol !== 'admin') {
@@ -15,6 +16,85 @@ const soloAdmin = (req, res) => {
     return false;
   }
   return true;
+};
+
+// Cuántas porciones se pueden servir todavía de cada producto, según el inventario.
+// Se descuenta lo que ya está pedido y aún no se cobra, porque el inventario solo baja al cobrar.
+// Devuelve un Map producto_id -> porciones. Los productos sin receta (ni insumo ligado) no entran:
+// de esos no se sabe cuántos quedan.
+const calcularDisponibles = async (userId) => {
+  const recetas = await pool.query(
+    `SELECT pi.producto_id, pi.insumo_id, pi.cantidad_usada
+     FROM plato_insumos pi
+     JOIN productos p ON p.id = pi.producto_id
+     WHERE p.user_id = $1`,
+    [userId]
+  );
+  const stock = await pool.query(
+    'SELECT id, cantidad_actual FROM insumos WHERE user_id = $1',
+    [userId]
+  );
+  const ligados = await pool.query(
+    `SELECT id, insumo_id FROM productos
+     WHERE user_id = $1 AND tipo = 'bebida' AND insumo_id IS NOT NULL`,
+    [userId]
+  );
+
+  // Lo que ya está comprometido en pedidos abiertos: el plato, su sopa y su principio
+  const comprometido = await pool.query(
+    `SELECT consumo.insumo_id, SUM(consumo.cantidad) AS cantidad
+     FROM (
+       SELECT pi.insumo_id, d.cantidad * pi.cantidad_usada AS cantidad
+       FROM pedido_detalle d
+       JOIN pedidos pe ON pe.id = d.pedido_id
+       JOIN plato_insumos pi ON pi.producto_id = d.producto_id
+       WHERE pe.user_id = $1 AND pe.venta_id IS NULL
+         AND pe.estado IN ('pendiente', 'en_preparacion', 'listo')
+       UNION ALL
+       SELECT pi.insumo_id, d.cantidad * pi.cantidad_usada
+       FROM pedido_detalle d
+       JOIN pedidos pe ON pe.id = d.pedido_id
+       JOIN plato_insumos pi ON pi.producto_id = d.sopa_id
+       WHERE pe.user_id = $1 AND pe.venta_id IS NULL
+         AND pe.estado IN ('pendiente', 'en_preparacion', 'listo')
+       UNION ALL
+       SELECT pi.insumo_id, d.cantidad * pi.cantidad_usada
+       FROM pedido_detalle d
+       JOIN pedidos pe ON pe.id = d.pedido_id
+       JOIN plato_insumos pi ON pi.producto_id = d.principio_id
+       WHERE pe.user_id = $1 AND pe.venta_id IS NULL
+         AND pe.estado IN ('pendiente', 'en_preparacion', 'listo')
+       UNION ALL
+       SELECT pr.insumo_id, d.cantidad
+       FROM pedido_detalle d
+       JOIN pedidos pe ON pe.id = d.pedido_id
+       JOIN productos pr ON pr.id = d.producto_id
+       WHERE pe.user_id = $1 AND pe.venta_id IS NULL
+         AND pe.estado IN ('pendiente', 'en_preparacion', 'listo')
+         AND pr.tipo = 'bebida' AND pr.insumo_id IS NOT NULL
+     ) consumo
+     GROUP BY consumo.insumo_id`,
+    [userId]
+  );
+
+  const libre = new Map(stock.rows.map((i) => [i.id, Number(i.cantidad_actual)]));
+  for (const c of comprometido.rows) {
+    libre.set(c.insumo_id, (libre.get(c.insumo_id) ?? 0) - Number(c.cantidad));
+  }
+
+  const disponibles = new Map();
+  for (const r of recetas.rows) {
+    const alcanza = Math.floor(Math.round((libre.get(r.insumo_id) ?? 0) * 100) / Math.round(Number(r.cantidad_usada) * 100));
+    const porciones = Math.max(0, alcanza);
+    const previo = disponibles.get(r.producto_id);
+    disponibles.set(r.producto_id, previo === undefined ? porciones : Math.min(previo, porciones));
+  }
+  for (const b of ligados.rows) {
+    if (!disponibles.has(b.id)) {
+      disponibles.set(b.id, Math.max(0, Math.floor(libre.get(b.insumo_id) ?? 0)));
+    }
+  }
+  return disponibles;
 };
 
 // Admin: todos los productos con sus ajustes de menú
@@ -32,21 +112,22 @@ const getMenuAdmin = async (req, res) => {
   }
 };
 
-// Mesero, caja y admin: solo lo disponible hoy
+// Mesero, caja y admin: solo lo disponible hoy, con cuántas porciones quedan (null si no se sabe)
 const getMenuHoy = async (req, res) => {
   try {
     const { rows } = await pool.query(
       `${SELECT_MENU} WHERE p.user_id = $1 AND p.disponible_hoy ORDER BY p.tipo, p.nombre`,
       [req.userId]
     );
-    res.json(rows);
+    const disponibles = await calcularDisponibles(req.userId);
+    res.json(rows.map((p) => ({ ...p, disponibles: disponibles.has(p.id) ? disponibles.get(p.id) : null })));
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al cargar el menú de hoy' });
   }
 };
 
-// Admin: activa/desactiva un producto hoy, o lo marca como sopa
+// Admin: activa/desactiva un producto hoy
 const updateMenuItem = async (req, res) => {
   if (!soloAdmin(req, res)) return;
 
@@ -55,34 +136,22 @@ const updateMenuItem = async (req, res) => {
     return res.status(400).json({ error: 'Producto no válido' });
   }
 
-  const { disponible_hoy, es_sopa } = req.body;
+  const { disponible_hoy } = req.body;
 
-  for (const [nombre, valor] of Object.entries({ disponible_hoy, es_sopa })) {
-    if (valor !== undefined && typeof valor !== 'boolean') {
-      return res.status(400).json({ error: `El campo ${nombre} debe ser verdadero o falso` });
-    }
+  if (typeof disponible_hoy !== 'boolean') {
+    return res.status(400).json({ error: 'El campo disponible_hoy debe ser verdadero o falso' });
   }
 
   try {
     const { rows } = await pool.query(
-      `UPDATE productos SET
-         disponible_hoy = COALESCE($1, disponible_hoy),
-         es_sopa = COALESCE($2, es_sopa)
-       WHERE id = $3 AND user_id = $4
-         AND NOT (COALESCE($2, FALSE) AND tipo = 'ejecutivo')
+      `UPDATE productos SET disponible_hoy = $1
+       WHERE id = $2 AND user_id = $3
        RETURNING id`,
-      [disponible_hoy ?? null, es_sopa ?? null, id, req.userId]
+      [disponible_hoy, id, req.userId]
     );
 
     if (rows.length === 0) {
-      const existe = await pool.query(
-        'SELECT id FROM productos WHERE id = $1 AND user_id = $2',
-        [id, req.userId]
-      );
-      if (existe.rows.length === 0) {
-        return res.status(404).json({ error: 'Producto no encontrado' });
-      }
-      return res.status(400).json({ error: 'Un plato ejecutivo no puede ser una sopa' });
+      return res.status(404).json({ error: 'Producto no encontrado' });
     }
 
     const actualizado = await pool.query(`${SELECT_MENU} WHERE p.id = $1`, [id]);
@@ -115,48 +184,10 @@ const reiniciarMenu = async (req, res) => {
   }
 };
 
-// Admin: descuento general por no llevar sopa
-const getAjustes = async (req, res) => {
-  if (!soloAdmin(req, res)) return;
-  try {
-    const { rows } = await pool.query(
-      'SELECT descuento_sin_sopa FROM ajustes_menu WHERE user_id = $1',
-      [req.userId]
-    );
-    res.json({ descuento_sin_sopa: rows[0] ? Number(rows[0].descuento_sin_sopa) : 1000 });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error al cargar los ajustes' });
-  }
-};
-
-const updateAjustes = async (req, res) => {
-  if (!soloAdmin(req, res)) return;
-
-  const descuento = Number(req.body.descuento_sin_sopa);
-  if (!Number.isFinite(descuento) || descuento < 0 || descuento > 1000000) {
-    return res.status(400).json({ error: 'El descuento no es válido' });
-  }
-
-  try {
-    const { rows } = await pool.query(
-      `INSERT INTO ajustes_menu (user_id, descuento_sin_sopa) VALUES ($1, $2)
-       ON CONFLICT (user_id) DO UPDATE SET descuento_sin_sopa = EXCLUDED.descuento_sin_sopa
-       RETURNING descuento_sin_sopa`,
-      [req.userId, descuento]
-    );
-    res.json({ descuento_sin_sopa: Number(rows[0].descuento_sin_sopa) });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error al guardar los ajustes' });
-  }
-};
-
 module.exports = {
+  DESCUENTO_SIN_SOPA,
   getMenuAdmin,
   getMenuHoy,
   updateMenuItem,
   reiniciarMenu,
-  getAjustes,
-  updateAjustes,
 };

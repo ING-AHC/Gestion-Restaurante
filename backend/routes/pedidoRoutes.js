@@ -3,6 +3,7 @@ const router = express.Router();
 const protect = require('../middleware/authMiddleware');
 const {
   createPedido,
+  agregarItems,
   getPedidos,
   updateEstado,
   confirmarPedido,
@@ -10,6 +11,7 @@ const {
 
 router.post('/', protect, createPedido);
 router.get('/', protect, getPedidos);
+router.post('/:id/items', protect, agregarItems);
 router.patch('/:id/estado', protect, updateEstado);
 router.post('/:id/confirmar', protect, confirmarPedido);
 

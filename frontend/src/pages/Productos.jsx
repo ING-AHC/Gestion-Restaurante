@@ -10,6 +10,7 @@ import {
 } from '../services/productoService';
 import { getInsumos } from '../services/insumoService';
 import InputMoneda from '../components/InputMoneda';
+import { useDialogos } from '../components/dialogosContexto';
 
 const TIPOS = [
   { value: 'especial', label: 'Especial' },
@@ -21,6 +22,7 @@ const TIPOS = [
 ];
 
 function Productos() {
+  const { confirmar, avisar } = useDialogos();
   const [productos, setProductos] = useState([]);
   const [insumos, setInsumos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -82,13 +84,24 @@ function Productos() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('¿Seguro que quieres eliminar este producto?')) return;
+    const producto = productos.find((p) => p.id === id);
+    const seguro = await confirmar({
+      titulo: 'Eliminar producto',
+      mensaje: `¿Seguro que quieres eliminar "${producto?.nombre ?? 'este producto'}"?`,
+      textoConfirmar: 'Sí, eliminar',
+      peligro: true,
+    });
+    if (!seguro) return;
 
     try {
       await deleteProducto(id);
       setProductos((prev) => prev.filter((p) => p.id !== id));
     } catch (err) {
-      alert(err.response?.data?.error || 'Error al eliminar el producto');
+      await avisar({
+        titulo: 'No se pudo eliminar',
+        mensaje: err.response?.data?.error || 'Error al eliminar el producto',
+        peligro: true,
+      });
     }
   };
 

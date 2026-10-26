@@ -10,10 +10,36 @@ const createVenta = async (req, res) => {
     return res.status(400).json({ error: 'Debes incluir al menos un producto en la venta' });
   }
 
+  // Cada línea es un producto del menú o un servicio libre (con nombre y valor)
+  const lineas = [];
   for (const item of items) {
     const cantidad = item.cantidad === undefined ? 1 : Number(item.cantidad);
-    if (!Number.isInteger(Number(item.producto_id)) || !Number.isFinite(cantidad) || cantidad <= 0) {
+    if (!Number.isInteger(cantidad) || cantidad <= 0 || cantidad > 1000) {
       return res.status(400).json({ error: 'Producto o cantidad no válidos en la venta' });
+    }
+
+    const esServicio = item.producto_id === undefined || item.producto_id === null || item.producto_id === '';
+
+    if (esServicio) {
+      const concepto = String(item.concepto ?? '').trim();
+      const precio = Number(item.precio);
+      if (!concepto || concepto.length > 150) {
+        return res.status(400).json({ error: 'Escribe qué servicio es (máximo 150 caracteres)' });
+      }
+      if (!Number.isFinite(precio) || precio <= 0 || precio > 100000000) {
+        return res.status(400).json({ error: `El valor de "${concepto}" no es válido` });
+      }
+      lineas.push({ concepto, precio, cantidad });
+    } else {
+      if (!Number.isInteger(Number(item.producto_id))) {
+        return res.status(400).json({ error: 'Producto o cantidad no válidos en la venta' });
+      }
+      lineas.push({
+        producto_id: Number(item.producto_id),
+        cantidad,
+        adicion_descripcion: item.adicion_descripcion,
+        adicion_valor: item.adicion_valor,
+      });
     }
   }
 
@@ -21,7 +47,7 @@ const createVenta = async (req, res) => {
 
   try {
     await client.query('BEGIN');
-    const venta = await registrarVenta(client, userId, { tipo: tipoVenta, fecha, items });
+    const venta = await registrarVenta(client, userId, { tipo: tipoVenta, fecha, items: lineas });
     await client.query('COMMIT');
 
     res.status(201).json(venta);
@@ -48,7 +74,8 @@ const getVentas = async (req, res) => {
          v.fecha,
          json_agg(
            json_build_object(
-             'producto_nombre', p.nombre,
+             'producto_nombre', COALESCE(p.nombre, vd.concepto, 'Producto eliminado'),
+             'es_servicio', (vd.producto_id IS NULL AND vd.concepto IS NOT NULL),
              'cantidad', vd.cantidad,
              'precio_unitario', vd.precio_unitario,
              'adicion_descripcion', vd.adicion_descripcion,

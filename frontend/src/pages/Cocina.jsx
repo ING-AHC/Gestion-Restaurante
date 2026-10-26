@@ -10,26 +10,52 @@ const colorBorde = (min) =>
 export default function Cocina() {
   const [pedidos, setPedidos] = useState([]);
   const [error, setError] = useState('');
-  const [sonido, setSonido] = useState(false);
+  const [sonidoActivo, setSonidoActivo] = useState(false);
   const [, setTick] = useState(0);
   const audioRef = useRef(null);
-  const vistosRef = useRef(null); // null = todavía no cargó la primera vez
-  const sonidoRef = useRef(false);
+  const vistosRef = useRef(null); // null = todavía no cargó la primera vez; luego { id de pedido → cantidad de líneas }
 
-  sonidoRef.current = sonido;
+  // El sonido siempre está activado. El navegador solo deja sonar el audio después de que
+  // alguien toca la pantalla una vez; mientras tanto se muestra un aviso para hacerlo.
+  useEffect(() => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return undefined;
 
+    const ctx = new Ctx();
+    audioRef.current = ctx;
+    const actualizar = () => setSonidoActivo(ctx.state === 'running');
+    const intentar = () => {
+      ctx.resume().then(actualizar).catch(() => {});
+    };
+
+    ctx.addEventListener('statechange', actualizar);
+    const eventos = ['pointerdown', 'keydown', 'touchstart'];
+    eventos.forEach((e) => window.addEventListener(e, intentar));
+    intentar();
+
+    return () => {
+      eventos.forEach((e) => window.removeEventListener(e, intentar));
+      ctx.removeEventListener('statechange', actualizar);
+      ctx.close().catch(() => {});
+      audioRef.current = null;
+    };
+  }, []);
+
+  // Dos pitidos seguidos, para que se oigan por encima del ruido de la cocina
   const pitar = () => {
     try {
       const ctx = audioRef.current;
-      if (!ctx) return;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 880;
-      gain.gain.value = 0.2;
-      osc.start();
-      osc.stop(ctx.currentTime + 0.3);
+      if (!ctx || ctx.state !== 'running') return;
+      [0, 0.3].forEach((retraso) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        gain.gain.value = 0.25;
+        osc.start(ctx.currentTime + retraso);
+        osc.stop(ctx.currentTime + retraso + 0.2);
+      });
     } catch {
       /* sin sonido */
     }
@@ -38,12 +64,15 @@ export default function Cocina() {
   const cargar = useCallback(async () => {
     try {
       const lista = await getPedidos('pendiente,en_preparacion');
-      const ids = new Set(lista.map((p) => p.id));
+      const vistos = new Map(lista.map((p) => [p.id, p.items.length]));
       if (vistosRef.current) {
-        const hayNuevo = lista.some((p) => !vistosRef.current.has(p.id));
-        if (hayNuevo && sonidoRef.current) pitar();
+        // Suena con un pedido nuevo o cuando a uno existente le agregan productos
+        const hayNuevo = lista.some(
+          (p) => !vistosRef.current.has(p.id) || p.items.length > vistosRef.current.get(p.id)
+        );
+        if (hayNuevo) pitar();
       }
-      vistosRef.current = ids;
+      vistosRef.current = vistos;
       setPedidos(lista);
       setError('');
     } catch {
@@ -60,19 +89,6 @@ export default function Cocina() {
     return () => clearInterval(id);
   }, [cargar]);
 
-  const alternarSonido = () => {
-    if (!sonido) {
-      // El navegador solo permite audio después de un clic: se crea aquí
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (Ctx && !audioRef.current) audioRef.current = new Ctx();
-      audioRef.current?.resume();
-      setSonido(true);
-      pitar();
-    } else {
-      setSonido(false);
-    }
-  };
-
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
@@ -81,14 +97,21 @@ export default function Cocina() {
           <h1 className="font-display text-3xl text-pizarra-950">Cocina</h1>
           <span className="text-lg text-pizarra-900/60">({pedidos.length})</span>
         </div>
-        <button
-          onClick={alternarSonido}
-          className="flex items-center gap-2 border border-pizarra-900/20 rounded-xl px-4 py-2 text-sm"
+        <span
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm ${
+            sonidoActivo ? 'text-green-700' : 'text-pizarra-900/50'
+          }`}
         >
-          {sonido ? <Volume2 size={18} /> : <VolumeX size={18} />}
-          {sonido ? 'Sonido activado' : 'Activar sonido'}
-        </button>
+          {sonidoActivo ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          {sonidoActivo ? 'Sonido activado' : 'Sonido en espera'}
+        </span>
       </div>
+
+      {!sonidoActivo && (
+        <p className="rounded-xl bg-mostaza-500/25 border border-mostaza-500 px-4 py-3 text-sm">
+          Toca cualquier parte de la pantalla una vez para activar el sonido de los pedidos nuevos.
+        </p>
+      )}
 
       {error && <p className="text-terracota-600">{error}</p>}
       {pedidos.length === 0 && (
@@ -119,6 +142,11 @@ export default function Cocina() {
               <ul className="space-y-2 text-2xl">
                 {p.items.map((it, i) => (
                   <li key={i}>
+                    {it.agregado && (
+                      <span className="inline-block mr-2 align-middle text-sm font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-2 py-0.5">
+                        AGREGADO
+                      </span>
+                    )}
                     <span className="font-bold">{it.cantidad}×</span> {it.producto_nombre}
                     {it.sopa_nombre && (
                       <span className="block text-xl text-pizarra-900/80">Sopa: {it.sopa_nombre}</span>
