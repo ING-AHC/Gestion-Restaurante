@@ -90,84 +90,84 @@ export default function Cocina() {
   }, [cargar]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <ChefHat className="text-mostaza-600" size={32} />
-          <h1 className="font-display text-3xl text-pizarra-950">Cocina</h1>
-          <span className="text-lg text-pizarra-900/60">({pedidos.length})</span>
+        <div className="flex items-center gap-4">
+          <ChefHat className="text-mostaza-600" size={48} />
+          <h1 className="font-display text-5xl text-pizarra-950">Cocina</h1>
+          <span className="text-3xl text-pizarra-900/60">({pedidos.length})</span>
         </div>
         <span
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-lg ${
             sonidoActivo ? 'text-green-700' : 'text-pizarra-900/50'
           }`}
         >
-          {sonidoActivo ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          {sonidoActivo ? <Volume2 size={26} /> : <VolumeX size={26} />}
           {sonidoActivo ? 'Sonido activado' : 'Sonido en espera'}
         </span>
       </div>
 
       {!sonidoActivo && (
-        <p className="rounded-xl bg-mostaza-500/25 border border-mostaza-500 px-4 py-3 text-sm">
+        <p className="rounded-xl bg-mostaza-500/25 border border-mostaza-500 px-5 py-4 text-xl">
           Toca cualquier parte de la pantalla una vez para activar el sonido de los pedidos nuevos.
         </p>
       )}
 
-      {error && <p className="text-terracota-600">{error}</p>}
+      {error && <p className="text-terracota-600 text-2xl">{error}</p>}
       {pedidos.length === 0 && (
-        <p className="text-xl text-pizarra-900/60 pt-8 text-center">Sin pedidos pendientes</p>
+        <p className="text-3xl text-pizarra-900/60 pt-10 text-center">Sin pedidos pendientes</p>
       )}
 
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-2 2xl:grid-cols-3">
         {pedidos.map((p) => {
           const min = minutosDesde(p.creado_en);
           const nuevo = Date.now() - new Date(p.creado_en) < 30000;
           return (
             <div
               key={p.id}
-              className={`bg-papel-card rounded-2xl shadow-sm border-4 p-6 space-y-4 ${colorBorde(min)}`}
+              className={`bg-papel-card rounded-2xl shadow-sm border-8 p-8 space-y-5 ${colorBorde(min)}`}
             >
-              <div className="flex items-center justify-between">
-                <p className="font-display text-3xl">Mesa {p.mesa}</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-display text-5xl">Mesa {p.mesa}</p>
                 <div className="text-right">
                   {nuevo && (
-                    <span className="block text-xs font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-2 py-0.5 mb-1">
+                    <span className="block text-base font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-3 py-1 mb-1">
                       NUEVO
                     </span>
                   )}
-                  <span className="text-lg font-semibold">{min < 1 ? 'ahora' : `${min} min`}</span>
+                  <span className="text-3xl font-semibold">{min < 1 ? 'ahora' : `${min} min`}</span>
                 </div>
               </div>
 
-              <ul className="space-y-2 text-2xl">
+              <ul className="space-y-4 text-4xl leading-tight">
                 {p.items.map((it, i) => (
                   <li key={i}>
                     {it.agregado && (
-                      <span className="inline-block mr-2 align-middle text-sm font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-2 py-0.5">
+                      <span className="inline-block mr-3 align-middle text-lg font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-3 py-1">
                         AGREGADO
                       </span>
                     )}
                     <span className="font-bold">{it.cantidad}×</span> {it.producto_nombre}
                     {it.sopa_nombre && (
-                      <span className="block text-xl text-pizarra-900/80">Sopa: {it.sopa_nombre}</span>
+                      <span className="block text-3xl text-pizarra-900/80">Sopa: {it.sopa_nombre}</span>
                     )}
                     {it.sin_sopa && (
-                      <span className="inline-block mt-1 text-lg font-bold bg-pizarra-900 text-white rounded-lg px-3 py-0.5">
+                      <span className="inline-block mt-1 text-2xl font-bold bg-pizarra-900 text-white rounded-lg px-4 py-1">
                         SIN SOPA
                       </span>
                     )}
                     {it.principio_nombre && (
-                      <span className="block text-xl text-pizarra-900/80">Principio: {it.principio_nombre}</span>
+                      <span className="block text-3xl text-pizarra-900/80">Principio: {it.principio_nombre}</span>
                     )}
                     {it.nota && (
-                      <span className="block text-lg text-terracota-600">↳ {it.nota}</span>
+                      <span className="block text-2xl text-terracota-600">↳ {it.nota}</span>
                     )}
                   </li>
                 ))}
               </ul>
 
-              {p.notas && <p className="text-lg italic text-pizarra-900/70">“{p.notas}”</p>}
-              {p.mesero && <p className="text-sm text-pizarra-900/50">Mesero: {p.mesero}</p>}
+              {p.notas && <p className="text-2xl italic text-pizarra-900/70">“{p.notas}”</p>}
+              {p.mesero && <p className="text-xl text-pizarra-900/50">Mesero: {p.mesero}</p>}
             </div>
           );
         })}
