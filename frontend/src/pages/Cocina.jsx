@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { ChefHat, Volume2, VolumeX, LogOut } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
+import { LogOut, Maximize, Minimize } from 'lucide-react';
 import { getPedidos } from '../services/pedidoService';
 import { useAuth } from '../context/AuthContext';
 
@@ -27,10 +27,10 @@ const NIVELES = [
     detalle: 'text-2xl', nota: 'text-2xl', etiqueta: 'text-xl', general: 'text-xl',
     espacio: 'space-y-3', columnas: '',
   },
-  { // 4: pedido muy largo → dos columnas y la tarjeta ocupa todo el ancho
+  { // 4: pedido muy largo
     mesa: 'text-4xl', tiempo: 'text-2xl', cant: 'text-3xl', nombre: 'text-3xl',
     detalle: 'text-xl', nota: 'text-xl', etiqueta: 'text-lg', general: 'text-xl',
-    espacio: 'space-y-3', columnas: 'md:columns-2 md:gap-8',
+    espacio: 'space-y-2', columnas: '',
   },
 ];
 
@@ -49,42 +49,98 @@ export default function Cocina() {
   const { user, logout } = useAuth();
   const [pedidos, setPedidos] = useState([]);
   const [error, setError] = useState('');
-  const [sonidoActivo, setSonidoActivo] = useState(false);
   const [, setTick] = useState(0);
+  const [pantallaCompleta, setPantallaCompleta] = useState(false);
   const audioRef = useRef(null);
   const vistosRef = useRef(null); // null = todavía no cargó la primera vez; luego { id de pedido → cantidad de líneas }
 
-  // El sonido siempre está activado. El navegador solo deja sonar el audio después de que
-  // alguien toca la pantalla una vez; mientras tanto se muestra un aviso para hacerlo.
+  // El sonido siempre está activado, sin botones. Si el navegador lo tiene bloqueado hasta que
+  // alguien toque la pantalla, se libera con el primer toque o tecla; y si Chrome se abre con
+  // --autoplay-policy=no-user-gesture-required (ver acceso directo de cocina) suena desde el inicio.
   useEffect(() => {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return undefined;
 
     const ctx = new Ctx();
     audioRef.current = ctx;
-    const actualizar = () => setSonidoActivo(ctx.state === 'running');
     const intentar = () => {
-      ctx.resume().then(actualizar).catch(() => {});
+      ctx.resume().catch(() => {});
     };
 
-    ctx.addEventListener('statechange', actualizar);
     const eventos = ['pointerdown', 'keydown', 'touchstart'];
     eventos.forEach((e) => window.addEventListener(e, intentar));
     intentar();
 
     return () => {
       eventos.forEach((e) => window.removeEventListener(e, intentar));
-      ctx.removeEventListener('statechange', actualizar);
       ctx.close().catch(() => {});
       audioRef.current = null;
     };
   }, []);
 
+  // Pantalla completa: con el primer toque o tecla (el navegador exige un gesto del usuario)
+  // y también con el botón de la esquina.
+  const alternarPantallaCompleta = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    } else {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const alCambiar = () => setPantallaCompleta(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', alCambiar);
+
+    // Solo para el usuario de cocina; el administrador no entra en pantalla completa por sí solo
+    let yaIntento = user?.rol !== 'cocina';
+    const alPrimerToque = () => {
+      if (yaIntento) return;
+      yaIntento = true;
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+    };
+    window.addEventListener('click', alPrimerToque);
+    window.addEventListener('keydown', alPrimerToque);
+    window.addEventListener('touchend', alPrimerToque);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', alCambiar);
+      window.removeEventListener('click', alPrimerToque);
+      window.removeEventListener('keydown', alPrimerToque);
+      window.removeEventListener('touchend', alPrimerToque);
+    };
+  }, [user?.rol]);
+
+  // Ajuste automático: todo se mide en "rem", así que cambiar el tamaño base de la página
+  // agranda o achica la letra y las tarjetas juntas. Se busca el tamaño más grande en el que
+  // todos los pedidos caben en la pantalla sin hacer scroll (con muchos pedidos baja la letra
+  // y se acomodan más columnas; con pocos, se agranda).
+  const contenedorRef = useRef(null);
+  const firma = JSON.stringify(pedidos);
+  useLayoutEffect(() => {
+    const raiz = document.documentElement;
+    const ajustar = () => {
+      const el = contenedorRef.current;
+      if (!el) return;
+      const disponible = window.innerHeight - 16;
+      let tamano = 1.4;
+      for (; tamano > 0.4; tamano = Math.round((tamano - 0.05) * 100) / 100) {
+        raiz.style.fontSize = `${16 * tamano}px`;
+        if (el.offsetHeight <= disponible) break;
+      }
+    };
+    ajustar();
+    window.addEventListener('resize', ajustar);
+    return () => window.removeEventListener('resize', ajustar);
+  }, [firma]);
+  useEffect(() => () => { document.documentElement.style.fontSize = ''; }, []);
+
   // Dos pitidos seguidos, para que se oigan por encima del ruido de la cocina
   const pitar = () => {
     try {
       const ctx = audioRef.current;
-      if (!ctx || ctx.state !== 'running') return;
+      if (!ctx) return;
+      if (ctx.state !== 'running') ctx.resume().catch(() => {});
       [0, 0.3].forEach((retraso) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -129,46 +185,14 @@ export default function Cocina() {
   }, [cargar]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <ChefHat className="text-mostaza-600" size={40} />
-          <h1 className="font-display text-4xl text-pizarra-950">Cocina</h1>
-          <span className="text-3xl text-pizarra-900/60">({pedidos.length})</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span
-            className={`flex items-center gap-2 rounded-xl px-3 py-1 text-lg ${
-              sonidoActivo ? 'text-green-700' : 'text-pizarra-900/50'
-            }`}
-          >
-            {sonidoActivo ? <Volume2 size={24} /> : <VolumeX size={24} />}
-            {sonidoActivo ? 'Sonido activado' : 'Sonido en espera'}
-          </span>
-          {user?.rol === 'cocina' && (
-            <button
-              onClick={logout}
-              className="flex items-center gap-2 rounded-xl border border-pizarra-900/25 px-3 py-2 text-base font-medium text-pizarra-900/70"
-            >
-              <LogOut size={18} />
-              Salir
-            </button>
-          )}
-        </div>
-      </div>
-
-      {!sonidoActivo && (
-        <p className="rounded-xl bg-mostaza-500/25 border border-mostaza-500 px-5 py-4 text-2xl">
-          Toca cualquier parte de la pantalla una vez para activar el sonido de los pedidos nuevos.
-        </p>
-      )}
-
-      {error && <p className="text-terracota-600 text-3xl">{error}</p>}
+    <div ref={contenedorRef}>
+      {error && <p className="text-terracota-600 text-3xl mb-3">{error}</p>}
       {pedidos.length === 0 && (
-        <p className="text-4xl text-pizarra-900/60 pt-10 text-center">Sin pedidos pendientes</p>
+        <p className="text-5xl text-pizarra-900/50 pt-24 text-center">Sin pedidos pendientes</p>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      {/* Las tarjetas se acomodan en columnas, sin huecos, aprovechando todo el ancho */}
+      <div className="gap-3" style={{ columnWidth: '30rem' }}>
         {pedidos.map((p) => {
           const min = minutosDesde(p.creado_en);
           const nuevo = Date.now() - new Date(p.creado_en) < 30000;
@@ -177,16 +201,14 @@ export default function Cocina() {
           return (
             <div
               key={p.id}
-              className={`bg-papel-card rounded-2xl shadow-sm border-8 p-5 ${t.espacio} ${colorBorde(min)} ${
-                nivel === 3 ? 'xl:col-span-2' : ''
-              }`}
+              className={`bg-papel-card rounded-2xl shadow-sm border-8 p-4 mb-3 break-inside-avoid ${t.espacio} ${colorBorde(min)}`}
             >
               {/* Encabezado: mesa a la izquierda, tiempo a la derecha */}
-              <div className="flex items-start justify-between gap-4 border-b-4 border-pizarra-900/15 pb-3">
+              <div className="flex items-start justify-between gap-4 border-b-4 border-pizarra-900/15 pb-2">
                 <p className={`font-display leading-none ${t.mesa}`}>Mesa {p.mesa}</p>
                 <div className="text-right shrink-0">
                   {nuevo && (
-                    <span className="inline-block text-2xl font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-4 py-1 mb-2">
+                    <span className="inline-block text-xl font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-3 py-0.5 mb-1">
                       NUEVO
                     </span>
                   )}
@@ -195,19 +217,17 @@ export default function Cocina() {
               </div>
 
               {/* Productos: cantidad en una columna y el detalle alineado a su derecha */}
-              <ul className={`${t.espacio} ${t.columnas}`}>
+              <ul className={t.espacio}>
                 {p.items.map((it, i) => (
                   <li
                     key={i}
-                    className={`grid grid-cols-[auto_1fr] gap-x-5 items-start border-b-2 border-pizarra-900/10 pb-4 mb-4 break-inside-avoid ${
-                      nivel === 3 ? '' : 'last:border-0 last:pb-0 last:mb-0'
-                    }`}
+                    className="grid grid-cols-[auto_1fr] gap-x-4 items-start border-b-2 border-pizarra-900/10 pb-2 last:border-0 last:pb-0"
                   >
                     <span className={`font-extrabold leading-none text-pizarra-950 ${t.cant}`}>{it.cantidad}×</span>
-                    <div className="space-y-2 min-w-0">
+                    <div className="space-y-1 min-w-0">
                       <p className={`font-bold leading-tight break-words ${t.nombre}`}>{it.producto_nombre}</p>
                       {it.agregado && (
-                        <span className={`inline-block font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-5 py-1 ${t.etiqueta}`}>
+                        <span className={`inline-block font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-4 py-0.5 ${t.etiqueta}`}>
                           AGREGADO
                         </span>
                       )}
@@ -215,7 +235,7 @@ export default function Cocina() {
                         <p className={`text-pizarra-900/90 leading-tight ${t.detalle}`}>Sopa: {it.sopa_nombre}</p>
                       )}
                       {it.sin_sopa && (
-                        <span className={`inline-block font-bold bg-pizarra-900 text-white rounded-xl px-5 py-1 ${t.etiqueta}`}>
+                        <span className={`inline-block font-bold bg-pizarra-900 text-white rounded-xl px-4 py-0.5 ${t.etiqueta}`}>
                           SIN SOPA
                         </span>
                       )}
@@ -225,7 +245,7 @@ export default function Cocina() {
                         </p>
                       )}
                       {it.nota && (
-                        <p className={`font-bold leading-tight text-terracota-600 bg-terracota-500/10 border-l-8 border-terracota-600 rounded-r-xl px-4 py-2 break-words ${t.nota}`}>
+                        <p className={`font-bold leading-tight text-terracota-600 bg-terracota-500/10 border-l-8 border-terracota-600 rounded-r-xl px-3 py-1 break-words ${t.nota}`}>
                           {it.nota}
                         </p>
                       )}
@@ -235,14 +255,31 @@ export default function Cocina() {
               </ul>
 
               {p.notas && (
-                <p className={`italic leading-tight text-pizarra-900/80 border-t-4 border-pizarra-900/15 pt-3 break-words ${t.general}`}>
+                <p className={`italic leading-tight text-pizarra-900/80 border-t-4 border-pizarra-900/15 pt-2 break-words ${t.general}`}>
                   “{p.notas}”
                 </p>
               )}
-              {p.mesero && <p className="text-2xl text-pizarra-900/50">Mesero: {p.mesero}</p>}
             </div>
           );
         })}
+      </div>
+
+      {/* Controles pequeños en la esquina: no le quitan espacio a los pedidos */}
+      <div className="fixed bottom-2 right-2 z-20 flex items-center gap-1 rounded-full bg-pizarra-950/70 text-papel px-2 py-1">
+        <span className="px-2 text-lg font-bold" title="Pedidos pendientes">{pedidos.length}</span>
+        <button
+          onClick={alternarPantallaCompleta}
+          title={pantallaCompleta ? 'Salir de pantalla completa' : 'Pantalla completa'}
+          aria-label="Pantalla completa"
+          className="p-2"
+        >
+          {pantallaCompleta ? <Minimize size={22} /> : <Maximize size={22} />}
+        </button>
+        {user?.rol === 'cocina' && (
+          <button onClick={logout} title="Cerrar sesión" aria-label="Cerrar sesión" className="p-2">
+            <LogOut size={22} />
+          </button>
+        )}
       </div>
     </div>
   );
