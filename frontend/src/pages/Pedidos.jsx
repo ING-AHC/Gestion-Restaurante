@@ -18,9 +18,9 @@ const ORDEN_TIPOS = ['ejecutivo', 'especial', 'bebida', 'rapida', 'sopa'];
 const TITULOS = {
   ejecutivo: 'Ejecutivos',
   especial: 'Especiales',
-  sopa: 'Sopas',
   bebida: 'Bebidas',
   rapida: 'Rápidas',
+  sopa: 'Sopas',
 };
 const posicion = (t) => (ORDEN_TIPOS.includes(t) ? ORDEN_TIPOS.indexOf(t) : ORDEN_TIPOS.length);
 
@@ -29,7 +29,7 @@ const cop = (n) => `${n < 0 ? '−' : ''}$${Math.abs(Number(n)).toLocaleString('
 const resumen = (it) =>
   `${it.cantidad}× ${it.producto_nombre}` +
   (it.sopa_nombre ? ` (${it.sopa_nombre})` : it.sin_sopa ? ' (sin sopa)' : '') +
-  (it.principio_nombre ? ` + ${it.principio_nombre}` : '');
+  (it.principio_nombre ? ` + ${it.principio_nombre}` : it.sin_principio ? ' (sin principio)' : '');
 
 export default function Pedidos() {
   const [menu, setMenu] = useState([]);
@@ -156,7 +156,7 @@ export default function Pedidos() {
     if (!agregandoA && !mesa.trim()) return setError('Escribe la mesa');
     if (totalItems === 0) return setError('Agrega al menos un producto');
     if (faltaSopa) return setError('Escoge la sopa de cada plato, o marca “sin sopa”');
-    if (faltaPrincipio) return setError('Escoge el principio de cada plato');
+    if (faltaPrincipio) return setError('Escoge el principio de cada plato, o marca “sin principio”');
 
     const items = [
       ...normales.map((i) => ({
@@ -169,7 +169,11 @@ export default function Pedidos() {
         cantidad: 1,
         nota: l.nota?.trim() || null,
         ...(l.sopa === 'sin' ? { sin_sopa: true } : { sopa_id: l.sopa }),
-        ...(l.principio ? { principio_id: l.principio } : {}),
+        ...(l.principio === 'sin'
+          ? { sin_principio: true }
+          : l.principio
+            ? { principio_id: l.principio }
+            : {}),
       })),
     ];
 
@@ -520,7 +524,11 @@ export default function Pedidos() {
                 {principios.length > 0 && (
                   <div>
                     <p className={`text-xs font-semibold ${l.principio ? 'text-pizarra-900/70' : 'text-terracota-600'}`}>
-                      {l.principio ? 'Principio' : 'Escoge el principio de este plato'}
+                      {!l.principio
+                        ? 'Escoge el principio de este plato'
+                        : l.principio === 'sin'
+                          ? 'Sin principio'
+                          : 'Principio'}
                     </p>
                     <div className="flex flex-wrap gap-2 mt-2">
                       {principios.map((pr) => {
@@ -543,6 +551,17 @@ export default function Pedidos() {
                           </button>
                         );
                       })}
+                      <button
+                        aria-pressed={l.principio === 'sin'}
+                        onClick={() => cambiarPlato(l.key, { principio: 'sin' })}
+                        className={`min-h-[44px] px-4 rounded-full text-sm ${
+                          l.principio === 'sin'
+                            ? 'bg-pizarra-900 text-white font-semibold'
+                            : 'bg-white border border-pizarra-900/20'
+                        }`}
+                      >
+                        Sin principio
+                      </button>
                     </div>
                   </div>
                 )}

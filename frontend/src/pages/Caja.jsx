@@ -99,6 +99,9 @@ export default function Caja() {
                   {it.principio_nombre && (
                     <p className="text-xs text-pizarra-900/80">Principio: {it.principio_nombre}</p>
                   )}
+                  {it.sin_principio && (
+                    <p className="text-xs text-pizarra-900/80">Sin principio</p>
+                  )}
                   {it.sin_sopa && (
                     <div className="flex justify-between gap-2 text-xs text-pizarra-900/80">
                       <span>Sin sopa</span>

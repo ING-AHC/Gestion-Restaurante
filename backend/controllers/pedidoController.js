@@ -53,7 +53,15 @@ const leerItems = (items) => {
     }
 
     const nota = item.nota ? String(item.nota).trim().slice(0, 255) : null;
-    return { productoId, cantidad, nota, sopaId, principioId, sinSopa: item.sin_sopa === true };
+    return {
+      productoId,
+      cantidad,
+      nota,
+      sopaId,
+      principioId,
+      sinSopa: item.sin_sopa === true,
+      sinPrincipio: item.sin_principio === true,
+    };
   });
 };
 
@@ -84,7 +92,7 @@ const validarLineas = async (client, userId, lineas) => {
     sopasValidas = new Set(sopas.rows.map((s) => s.id));
   }
 
-  // Principios activos hoy: si hay, cada ejecutivo debe llevar uno
+  // Principios activos hoy: si hay, cada ejecutivo debe llevar uno (o marcar "sin principio")
   const principios = await client.query(
     `SELECT id FROM productos WHERE user_id = $1 AND tipo = 'principio' AND disponible_hoy`,
     [userId]
@@ -109,16 +117,20 @@ const validarLineas = async (client, userId, lineas) => {
       }
 
       if (principiosHoy.size > 0) {
-        if (!l.principioId || !principiosHoy.has(l.principioId)) {
-          throw new ErrorNegocio(400, `Escoge el principio de "${p.nombre}"`);
+        if (l.sinPrincipio) {
+          l.principioId = null;
+        } else if (!l.principioId || !principiosHoy.has(l.principioId)) {
+          throw new ErrorNegocio(400, `Escoge el principio de "${p.nombre}" o marca "sin principio"`);
         }
       } else {
         l.principioId = null;
+        l.sinPrincipio = false;
       }
     } else {
       l.sopaId = null;
       l.principioId = null;
       l.sinSopa = false;
+      l.sinPrincipio = false;
     }
   }
 };
@@ -126,9 +138,10 @@ const validarLineas = async (client, userId, lineas) => {
 const insertarLineas = async (client, pedidoId, lineas, agregado) => {
   for (const l of lineas) {
     await client.query(
-      `INSERT INTO pedido_detalle (pedido_id, producto_id, cantidad, nota, sopa_id, principio_id, sin_sopa, agregado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [pedidoId, l.productoId, l.cantidad, l.nota, l.sopaId, l.principioId, l.sinSopa, agregado]
+      `INSERT INTO pedido_detalle
+         (pedido_id, producto_id, cantidad, nota, sopa_id, principio_id, sin_sopa, sin_principio, agregado)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [pedidoId, l.productoId, l.cantidad, l.nota, l.sopaId, l.principioId, l.sinSopa, l.sinPrincipio, agregado]
     );
   }
 };
@@ -255,6 +268,7 @@ const getPedidos = async (req, res) => {
                'sopa_nombre', sp.nombre,
                'principio_nombre', pp.nombre,
                'sin_sopa', d.sin_sopa,
+               'sin_principio', d.sin_principio,
                'agregado', d.agregado,
                'ajuste', CASE WHEN d.sin_sopa THEN -${DESCUENTO_SIN_SOPA} ELSE 0 END
              ) ORDER BY d.id
@@ -377,7 +391,7 @@ const confirmarPedido = async (req, res) => {
     }
 
     const detalle = await client.query(
-      `SELECT d.producto_id, d.cantidad, d.nota, d.sin_sopa, d.sopa_id, d.principio_id,
+      `SELECT d.producto_id, d.cantidad, d.nota, d.sin_sopa, d.sin_principio, d.sopa_id, d.principio_id,
               sp.nombre AS sopa_nombre,
               pp.nombre AS principio_nombre
        FROM pedido_detalle d
@@ -396,7 +410,7 @@ const confirmarPedido = async (req, res) => {
     const items = detalle.rows.map((d) => {
       const partes = [
         d.sin_sopa ? 'Sin sopa' : d.sopa_nombre ? `Sopa: ${d.sopa_nombre}` : null,
-        d.principio_nombre ? `Principio: ${d.principio_nombre}` : null,
+        d.sin_principio ? 'Sin principio' : d.principio_nombre ? `Principio: ${d.principio_nombre}` : null,
         d.nota,
       ].filter(Boolean);
 
