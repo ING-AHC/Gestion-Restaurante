@@ -42,6 +42,15 @@ function DashboardLayout() {
   const rol = user?.rol || 'admin';
   const items = navItems.filter((item) => item.roles.includes(rol));
 
+  // Cocina tiene una sola pantalla: sin menú lateral ni barra superior, todo el espacio para los pedidos
+  if (rol === 'cocina') {
+    return (
+      <main className="min-h-screen bg-papel p-3">
+        <Outlet />
+      </main>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-papel md:flex">
       {/* Barra superior (solo celular) */}

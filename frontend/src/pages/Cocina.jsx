@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { ChefHat, Volume2, VolumeX } from 'lucide-react';
+import { ChefHat, Volume2, VolumeX, LogOut } from 'lucide-react';
 import { getPedidos } from '../services/pedidoService';
+import { useAuth } from '../context/AuthContext';
 
 const minutosDesde = (iso) => Math.max(0, Math.floor((Date.now() - new Date(iso)) / 60000));
 
@@ -12,24 +13,24 @@ const colorBorde = (min) =>
 // (Las clases van completas para que Tailwind las detecte.)
 const NIVELES = [
   { // 1: pedido corto
-    mesa: 'text-7xl', tiempo: 'text-5xl', cant: 'text-7xl', nombre: 'text-7xl',
-    detalle: 'text-5xl', nota: 'text-5xl', etiqueta: 'text-4xl', general: 'text-4xl',
-    espacio: 'space-y-6', columnas: '',
-  },
-  { // 2: pedido mediano
     mesa: 'text-6xl', tiempo: 'text-4xl', cant: 'text-6xl', nombre: 'text-6xl',
     detalle: 'text-4xl', nota: 'text-4xl', etiqueta: 'text-3xl', general: 'text-3xl',
-    espacio: 'space-y-5', columnas: '',
-  },
-  { // 3: pedido largo
-    mesa: 'text-5xl', tiempo: 'text-3xl', cant: 'text-5xl', nombre: 'text-5xl',
-    detalle: 'text-3xl', nota: 'text-3xl', etiqueta: 'text-2xl', general: 'text-2xl',
     espacio: 'space-y-4', columnas: '',
   },
+  { // 2: pedido mediano
+    mesa: 'text-5xl', tiempo: 'text-3xl', cant: 'text-5xl', nombre: 'text-5xl',
+    detalle: 'text-3xl', nota: 'text-3xl', etiqueta: 'text-2xl', general: 'text-2xl',
+    espacio: 'space-y-3', columnas: '',
+  },
+  { // 3: pedido largo
+    mesa: 'text-4xl', tiempo: 'text-2xl', cant: 'text-4xl', nombre: 'text-4xl',
+    detalle: 'text-2xl', nota: 'text-2xl', etiqueta: 'text-xl', general: 'text-xl',
+    espacio: 'space-y-3', columnas: '',
+  },
   { // 4: pedido muy largo → dos columnas y la tarjeta ocupa todo el ancho
-    mesa: 'text-5xl', tiempo: 'text-3xl', cant: 'text-4xl', nombre: 'text-4xl',
-    detalle: 'text-2xl', nota: 'text-2xl', etiqueta: 'text-xl', general: 'text-2xl',
-    espacio: 'space-y-4', columnas: 'md:columns-2 md:gap-8',
+    mesa: 'text-4xl', tiempo: 'text-2xl', cant: 'text-3xl', nombre: 'text-3xl',
+    detalle: 'text-xl', nota: 'text-xl', etiqueta: 'text-lg', general: 'text-xl',
+    espacio: 'space-y-3', columnas: 'md:columns-2 md:gap-8',
   },
 ];
 
@@ -45,6 +46,7 @@ const nivelDe = (p) => {
 };
 
 export default function Cocina() {
+  const { user, logout } = useAuth();
   const [pedidos, setPedidos] = useState([]);
   const [error, setError] = useState('');
   const [sonidoActivo, setSonidoActivo] = useState(false);
@@ -127,21 +129,32 @@ export default function Cocina() {
   }, [cargar]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-4">
-          <ChefHat className="text-mostaza-600" size={56} />
-          <h1 className="font-display text-6xl text-pizarra-950">Cocina</h1>
-          <span className="text-4xl text-pizarra-900/60">({pedidos.length})</span>
+        <div className="flex items-center gap-3">
+          <ChefHat className="text-mostaza-600" size={40} />
+          <h1 className="font-display text-4xl text-pizarra-950">Cocina</h1>
+          <span className="text-3xl text-pizarra-900/60">({pedidos.length})</span>
         </div>
-        <span
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xl ${
-            sonidoActivo ? 'text-green-700' : 'text-pizarra-900/50'
-          }`}
-        >
-          {sonidoActivo ? <Volume2 size={30} /> : <VolumeX size={30} />}
-          {sonidoActivo ? 'Sonido activado' : 'Sonido en espera'}
-        </span>
+        <div className="flex items-center gap-3">
+          <span
+            className={`flex items-center gap-2 rounded-xl px-3 py-1 text-lg ${
+              sonidoActivo ? 'text-green-700' : 'text-pizarra-900/50'
+            }`}
+          >
+            {sonidoActivo ? <Volume2 size={24} /> : <VolumeX size={24} />}
+            {sonidoActivo ? 'Sonido activado' : 'Sonido en espera'}
+          </span>
+          {user?.rol === 'cocina' && (
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 rounded-xl border border-pizarra-900/25 px-3 py-2 text-base font-medium text-pizarra-900/70"
+            >
+              <LogOut size={18} />
+              Salir
+            </button>
+          )}
+        </div>
       </div>
 
       {!sonidoActivo && (
@@ -155,7 +168,7 @@ export default function Cocina() {
         <p className="text-4xl text-pizarra-900/60 pt-10 text-center">Sin pedidos pendientes</p>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-4 xl:grid-cols-2">
         {pedidos.map((p) => {
           const min = minutosDesde(p.creado_en);
           const nuevo = Date.now() - new Date(p.creado_en) < 30000;
@@ -164,12 +177,12 @@ export default function Cocina() {
           return (
             <div
               key={p.id}
-              className={`bg-papel-card rounded-2xl shadow-sm border-8 p-8 ${t.espacio} ${colorBorde(min)} ${
+              className={`bg-papel-card rounded-2xl shadow-sm border-8 p-5 ${t.espacio} ${colorBorde(min)} ${
                 nivel === 3 ? 'xl:col-span-2' : ''
               }`}
             >
               {/* Encabezado: mesa a la izquierda, tiempo a la derecha */}
-              <div className="flex items-start justify-between gap-4 border-b-4 border-pizarra-900/15 pb-5">
+              <div className="flex items-start justify-between gap-4 border-b-4 border-pizarra-900/15 pb-3">
                 <p className={`font-display leading-none ${t.mesa}`}>Mesa {p.mesa}</p>
                 <div className="text-right shrink-0">
                   {nuevo && (
@@ -222,7 +235,7 @@ export default function Cocina() {
               </ul>
 
               {p.notas && (
-                <p className={`italic leading-tight text-pizarra-900/80 border-t-4 border-pizarra-900/15 pt-5 break-words ${t.general}`}>
+                <p className={`italic leading-tight text-pizarra-900/80 border-t-4 border-pizarra-900/15 pt-3 break-words ${t.general}`}>
                   “{p.notas}”
                 </p>
               )}
