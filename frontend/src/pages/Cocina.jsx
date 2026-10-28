@@ -34,10 +34,22 @@ const NIVELES = [
   },
 ];
 
+// Tamaño normal para el administrador, que ve esta pantalla dentro del menú de siempre
+const NIVEL_NORMAL = {
+  mesa: 'text-2xl', tiempo: 'text-base', cant: 'text-xl', nombre: 'text-xl',
+  detalle: 'text-base', nota: 'text-base', etiqueta: 'text-sm', general: 'text-base',
+  espacio: 'space-y-2', columnas: '',
+};
+
 // "Peso" del pedido: cada producto cuenta una línea, más una por cada sopa, principio o nota.
 const pesoPedido = (p) =>
   p.items.reduce(
-    (t, it) => t + 1 + (it.sopa_nombre ? 1 : 0) + (it.principio_nombre ? 1 : 0) + (it.nota ? 1 : 0),
+    (t, it) =>
+      t +
+      1 +
+      (it.sopa_nombre || it.sin_sopa ? 1 : 0) +
+      (it.principio_nombre || it.sin_principio ? 1 : 0) +
+      (it.nota ? 1 : 0),
     0
   );
 const nivelDe = (p) => {
@@ -116,10 +128,11 @@ export default function Cocina() {
   // todos los pedidos caben en la pantalla sin hacer scroll (con muchos pedidos baja la letra
   // y se acomodan más columnas; con pocos, se agranda).
   const contenedorRef = useRef(null);
+  const esCocina = user?.rol === 'cocina';
   const firma = JSON.stringify(pedidos);
   useLayoutEffect(() => {
     // Solo la pantalla de cocina (la TV) se autoajusta; el administrador la ve con el tamaño normal
-    if (user?.rol !== 'cocina') return undefined;
+    if (!esCocina) return undefined;
     const raiz = document.documentElement;
     const ajustar = () => {
       const el = contenedorRef.current;
@@ -133,8 +146,8 @@ export default function Cocina() {
     };
     ajustar();
     window.addEventListener('resize', ajustar);
-     return () => window.removeEventListener('resize', ajustar);
-  }, [firma, user?.rol]);
+    return () => window.removeEventListener('resize', ajustar);
+  }, [firma, esCocina]);
   useEffect(() => () => { document.documentElement.style.fontSize = ''; }, []);
 
   // Dos pitidos seguidos, para que se oigan por encima del ruido de la cocina
@@ -188,18 +201,18 @@ export default function Cocina() {
 
   return (
     <div ref={contenedorRef}>
-      {error && <p className="text-terracota-600 text-3xl mb-3">{error}</p>}
+      {error && <p className={`text-terracota-600 mb-3 ${esCocina ? 'text-3xl' : 'text-base'}`}>{error}</p>}
       {pedidos.length === 0 && (
-        <p className="text-5xl text-pizarra-900/50 pt-24 text-center">Sin pedidos pendientes</p>
+        <p className={`text-pizarra-900/50 text-center ${esCocina ? 'text-5xl pt-24' : 'text-lg pt-8'}`}>Sin pedidos pendientes</p>
       )}
 
       {/* Las tarjetas se acomodan en columnas, sin huecos, aprovechando todo el ancho */}
-      <div className="gap-3" style={{ columnWidth: '30rem' }}>
+      <div className="gap-3" style={{ columnWidth: esCocina ? '30rem' : '20rem' }}>
         {pedidos.map((p) => {
           const min = minutosDesde(p.creado_en);
           const nuevo = Date.now() - new Date(p.creado_en) < 30000;
           const nivel = nivelDe(p);
-          const t = NIVELES[nivel];
+          const t = esCocina ? NIVELES[nivel] : NIVEL_NORMAL;
           return (
             <div
               key={p.id}
@@ -245,6 +258,11 @@ export default function Cocina() {
                         <p className={`text-pizarra-900/90 leading-tight ${t.detalle}`}>
                           Principio: {it.principio_nombre}
                         </p>
+                      )}
+                      {it.sin_principio && (
+                        <span className={`inline-block font-bold bg-pizarra-900 text-white rounded-xl px-4 py-0.5 ${t.etiqueta}`}>
+                          SIN PRINCIPIO
+                        </span>
                       )}
                       {it.nota && (
                         <p className={`font-bold leading-tight text-terracota-600 bg-terracota-500/10 border-l-8 border-terracota-600 rounded-r-xl px-3 py-1 break-words ${t.nota}`}>
