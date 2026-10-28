@@ -7,6 +7,43 @@ const minutosDesde = (iso) => Math.max(0, Math.floor((Date.now() - new Date(iso)
 const colorBorde = (min) =>
   min >= 20 ? 'border-terracota-600' : min >= 10 ? 'border-mostaza-500' : 'border-green-600';
 
+// La letra de cada tarjeta se ajusta a cuánto lleva el pedido:
+// pocos productos → letra enorme; muchos → más pequeña y en dos columnas.
+// (Las clases van completas para que Tailwind las detecte.)
+const NIVELES = [
+  { // 1: pedido corto
+    mesa: 'text-7xl', tiempo: 'text-5xl', cant: 'text-7xl', nombre: 'text-7xl',
+    detalle: 'text-5xl', nota: 'text-5xl', etiqueta: 'text-4xl', general: 'text-4xl',
+    espacio: 'space-y-6', columnas: '',
+  },
+  { // 2: pedido mediano
+    mesa: 'text-6xl', tiempo: 'text-4xl', cant: 'text-6xl', nombre: 'text-6xl',
+    detalle: 'text-4xl', nota: 'text-4xl', etiqueta: 'text-3xl', general: 'text-3xl',
+    espacio: 'space-y-5', columnas: '',
+  },
+  { // 3: pedido largo
+    mesa: 'text-5xl', tiempo: 'text-3xl', cant: 'text-5xl', nombre: 'text-5xl',
+    detalle: 'text-3xl', nota: 'text-3xl', etiqueta: 'text-2xl', general: 'text-2xl',
+    espacio: 'space-y-4', columnas: '',
+  },
+  { // 4: pedido muy largo → dos columnas y la tarjeta ocupa todo el ancho
+    mesa: 'text-5xl', tiempo: 'text-3xl', cant: 'text-4xl', nombre: 'text-4xl',
+    detalle: 'text-2xl', nota: 'text-2xl', etiqueta: 'text-xl', general: 'text-2xl',
+    espacio: 'space-y-4', columnas: 'md:columns-2 md:gap-8',
+  },
+];
+
+// "Peso" del pedido: cada producto cuenta una línea, más una por cada sopa, principio o nota.
+const pesoPedido = (p) =>
+  p.items.reduce(
+    (t, it) => t + 1 + (it.sopa_nombre ? 1 : 0) + (it.principio_nombre ? 1 : 0) + (it.nota ? 1 : 0),
+    0
+  );
+const nivelDe = (p) => {
+  const peso = pesoPedido(p);
+  return peso <= 4 ? 0 : peso <= 8 ? 1 : peso <= 14 ? 2 : 3;
+};
+
 export default function Cocina() {
   const [pedidos, setPedidos] = useState([]);
   const [error, setError] = useState('');
@@ -93,81 +130,103 @@ export default function Cocina() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-4">
-          <ChefHat className="text-mostaza-600" size={48} />
-          <h1 className="font-display text-5xl text-pizarra-950">Cocina</h1>
-          <span className="text-3xl text-pizarra-900/60">({pedidos.length})</span>
+          <ChefHat className="text-mostaza-600" size={56} />
+          <h1 className="font-display text-6xl text-pizarra-950">Cocina</h1>
+          <span className="text-4xl text-pizarra-900/60">({pedidos.length})</span>
         </div>
         <span
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-lg ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-xl ${
             sonidoActivo ? 'text-green-700' : 'text-pizarra-900/50'
           }`}
         >
-          {sonidoActivo ? <Volume2 size={26} /> : <VolumeX size={26} />}
+          {sonidoActivo ? <Volume2 size={30} /> : <VolumeX size={30} />}
           {sonidoActivo ? 'Sonido activado' : 'Sonido en espera'}
         </span>
       </div>
 
       {!sonidoActivo && (
-        <p className="rounded-xl bg-mostaza-500/25 border border-mostaza-500 px-5 py-4 text-xl">
+        <p className="rounded-xl bg-mostaza-500/25 border border-mostaza-500 px-5 py-4 text-2xl">
           Toca cualquier parte de la pantalla una vez para activar el sonido de los pedidos nuevos.
         </p>
       )}
 
-      {error && <p className="text-terracota-600 text-2xl">{error}</p>}
+      {error && <p className="text-terracota-600 text-3xl">{error}</p>}
       {pedidos.length === 0 && (
-        <p className="text-3xl text-pizarra-900/60 pt-10 text-center">Sin pedidos pendientes</p>
+        <p className="text-4xl text-pizarra-900/60 pt-10 text-center">Sin pedidos pendientes</p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid gap-6 xl:grid-cols-2">
         {pedidos.map((p) => {
           const min = minutosDesde(p.creado_en);
           const nuevo = Date.now() - new Date(p.creado_en) < 30000;
+          const nivel = nivelDe(p);
+          const t = NIVELES[nivel];
           return (
             <div
               key={p.id}
-              className={`bg-papel-card rounded-2xl shadow-sm border-8 p-8 space-y-5 ${colorBorde(min)}`}
+              className={`bg-papel-card rounded-2xl shadow-sm border-8 p-8 ${t.espacio} ${colorBorde(min)} ${
+                nivel === 3 ? 'xl:col-span-2' : ''
+              }`}
             >
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-display text-5xl">Mesa {p.mesa}</p>
-                <div className="text-right">
+              {/* Encabezado: mesa a la izquierda, tiempo a la derecha */}
+              <div className="flex items-start justify-between gap-4 border-b-4 border-pizarra-900/15 pb-5">
+                <p className={`font-display leading-none ${t.mesa}`}>Mesa {p.mesa}</p>
+                <div className="text-right shrink-0">
                   {nuevo && (
-                    <span className="block text-base font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-3 py-1 mb-1">
+                    <span className="inline-block text-2xl font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-4 py-1 mb-2">
                       NUEVO
                     </span>
                   )}
-                  <span className="text-3xl font-semibold">{min < 1 ? 'ahora' : `${min} min`}</span>
+                  <p className={`font-bold leading-none ${t.tiempo}`}>{min < 1 ? 'ahora' : `${min} min`}</p>
                 </div>
               </div>
 
-              <ul className="space-y-4 text-4xl leading-tight">
+              {/* Productos: cantidad en una columna y el detalle alineado a su derecha */}
+              <ul className={`${t.espacio} ${t.columnas}`}>
                 {p.items.map((it, i) => (
-                  <li key={i}>
-                    {it.agregado && (
-                      <span className="inline-block mr-3 align-middle text-lg font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-3 py-1">
-                        AGREGADO
-                      </span>
-                    )}
-                    <span className="font-bold">{it.cantidad}×</span> {it.producto_nombre}
-                    {it.sopa_nombre && (
-                      <span className="block text-3xl text-pizarra-900/80">Sopa: {it.sopa_nombre}</span>
-                    )}
-                    {it.sin_sopa && (
-                      <span className="inline-block mt-1 text-2xl font-bold bg-pizarra-900 text-white rounded-lg px-4 py-1">
-                        SIN SOPA
-                      </span>
-                    )}
-                    {it.principio_nombre && (
-                      <span className="block text-3xl text-pizarra-900/80">Principio: {it.principio_nombre}</span>
-                    )}
-                    {it.nota && (
-                      <span className="block text-2xl text-terracota-600">↳ {it.nota}</span>
-                    )}
+                  <li
+                    key={i}
+                    className={`grid grid-cols-[auto_1fr] gap-x-5 items-start border-b-2 border-pizarra-900/10 pb-4 mb-4 break-inside-avoid ${
+                      nivel === 3 ? '' : 'last:border-0 last:pb-0 last:mb-0'
+                    }`}
+                  >
+                    <span className={`font-extrabold leading-none text-pizarra-950 ${t.cant}`}>{it.cantidad}×</span>
+                    <div className="space-y-2 min-w-0">
+                      <p className={`font-bold leading-tight break-words ${t.nombre}`}>{it.producto_nombre}</p>
+                      {it.agregado && (
+                        <span className={`inline-block font-bold bg-mostaza-500 text-pizarra-950 rounded-full px-5 py-1 ${t.etiqueta}`}>
+                          AGREGADO
+                        </span>
+                      )}
+                      {it.sopa_nombre && (
+                        <p className={`text-pizarra-900/90 leading-tight ${t.detalle}`}>Sopa: {it.sopa_nombre}</p>
+                      )}
+                      {it.sin_sopa && (
+                        <span className={`inline-block font-bold bg-pizarra-900 text-white rounded-xl px-5 py-1 ${t.etiqueta}`}>
+                          SIN SOPA
+                        </span>
+                      )}
+                      {it.principio_nombre && (
+                        <p className={`text-pizarra-900/90 leading-tight ${t.detalle}`}>
+                          Principio: {it.principio_nombre}
+                        </p>
+                      )}
+                      {it.nota && (
+                        <p className={`font-bold leading-tight text-terracota-600 bg-terracota-500/10 border-l-8 border-terracota-600 rounded-r-xl px-4 py-2 break-words ${t.nota}`}>
+                          {it.nota}
+                        </p>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
 
-              {p.notas && <p className="text-2xl italic text-pizarra-900/70">“{p.notas}”</p>}
-              {p.mesero && <p className="text-xl text-pizarra-900/50">Mesero: {p.mesero}</p>}
+              {p.notas && (
+                <p className={`italic leading-tight text-pizarra-900/80 border-t-4 border-pizarra-900/15 pt-5 break-words ${t.general}`}>
+                  “{p.notas}”
+                </p>
+              )}
+              {p.mesero && <p className="text-2xl text-pizarra-900/50">Mesero: {p.mesero}</p>}
             </div>
           );
         })}
