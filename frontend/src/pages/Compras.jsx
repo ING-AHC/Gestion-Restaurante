@@ -23,7 +23,7 @@ const PESTANAS = [
   { id: 'insumos', texto: 'Insumos', proveedor: true },
   { id: 'nomina', texto: 'Nómina', categoria: 'Nómina', proveedor: false },
   { id: 'servicios', texto: 'Servicios', categoria: 'Servicios', proveedor: false },
-  { id: 'arriendo', texto: 'Arriendo', categoria: 'Arriendo', proveedor: false },
+  { id: 'casa', texto: 'casa', categoria: 'casa', proveedor: false },
 ];
 
 const filaVacia = (tab) => {
@@ -390,19 +390,19 @@ function Compras() {
                     />
                   )}
 
-                  {(tab === 'general' || tab === 'servicios' || tab === 'arriendo') && (
+                  {(tab === 'general' || tab === 'servicios' || tab === 'casa') && (
                     <input
                       type="text"
                       placeholder={
                         tab === 'servicios'
                           ? 'Qué servicio (agua, luz, gas, internet…)'
-                          : tab === 'arriendo'
-                            ? 'Detalle (opcional, ej: arriendo de octubre)'
+                          : tab === 'casa'
+                            ? 'Detalle (opcional, ej: gastos de la casa)'
                             : 'Descripción (ej: reparación de la nevera)'
                       }
                       value={fila.descripcion}
                       onChange={(e) => cambiarFila(index, 'descripcion', e.target.value)}
-                      required={tab !== 'arriendo'}
+                      required={tab !== 'casa'}
                       maxLength={200}
                       className={`w-full ${campo}`}
                     />
