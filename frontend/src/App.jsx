@@ -7,7 +7,7 @@ import RutaRol from './components/RutaRol';
 import DashboardLayout from './layouts/DashboardLayout';
 import Insumos from './pages/Insumos';
 import Proveedores from './pages/Proveedores';
-import CategoriasGasto from './pages/CategoriasGasto';
+
 import Compras from './pages/Compras';
 import Productos from './pages/Productos';
 import Ventas from './pages/Ventas';
@@ -36,7 +36,6 @@ function App() {
           <Route path="/dashboard" element={<SoloAdmin><Dashboard /></SoloAdmin>} />
           <Route path="/insumos" element={<SoloAdmin><Insumos /></SoloAdmin>} />
           <Route path="/proveedores" element={<SoloAdmin><Proveedores /></SoloAdmin>} />
-          <Route path="/categorias-gasto" element={<SoloAdmin><CategoriasGasto /></SoloAdmin>} />
           <Route path="/compras" element={<SoloAdmin><Compras /></SoloAdmin>} />
           <Route path="/productos" element={<SoloAdmin><Productos /></SoloAdmin>} />
           <Route path="/ventas" element={<SoloAdmin><Ventas /></SoloAdmin>} />

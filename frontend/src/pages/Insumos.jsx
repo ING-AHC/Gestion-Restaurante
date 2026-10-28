@@ -3,9 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Search, Plus, Trash2, AlertTriangle, ArrowUpDown, Pencil } from 'lucide-react';
 import { getInsumos, createInsumo, deleteInsumo, updateInsumo } from '../services/insumoService';
 import { getCategoriasGasto } from '../services/categoriaGastoService';
+import SelectorCategoria from '../components/SelectorCategoria';
 import { useDialogos } from '../components/dialogosContexto';
 
 const STOCK_BAJO_UMBRAL = 5;
+// Misma regla para el aviso, el filtro y el color rojo de la lista
+const esStockBajo = (insumo) => parseFloat(insumo.cantidad_actual) <= STOCK_BAJO_UMBRAL;
 
 function Insumos() {
   const { confirmar, avisar } = useDialogos();
@@ -19,6 +22,7 @@ function Insumos() {
   const [error, setError] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [filtroCategoria, setFiltroCategoria] = useState('');
+  const [soloStockBajo, setSoloStockBajo] = useState(false);
   const [orden, setOrden] = useState({ campo: 'nombre', direccion: 'asc' });
 
   const [insumoParaEditar, setInsumoParaEditar] = useState(null);
@@ -42,6 +46,13 @@ function Insumos() {
     };
     loadAll();
   }, []);
+
+  const agregarCategoria = (nueva) =>
+    setCategorias((prev) =>
+      prev.some((c) => c.id === nueva.id)
+        ? prev
+        : [...prev, nueva].sort((a, b) => a.nombre.localeCompare(b.nombre))
+    );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -127,11 +138,14 @@ function Insumos() {
     );
   };
 
+  const conStockBajo = insumos.filter(esStockBajo).length;
+
   const insumosFiltrados = insumos
     .filter((insumo) => {
       const coincideBusqueda = insumo.nombre.toLowerCase().includes(busqueda.toLowerCase());
       const coincideCategoria = !filtroCategoria || insumo.categoria_id === parseInt(filtroCategoria);
-      return coincideBusqueda && coincideCategoria;
+      const coincideStock = !(soloStockBajo && conStockBajo > 0) || esStockBajo(insumo);
+      return coincideBusqueda && coincideCategoria && coincideStock;
     })
     .sort((a, b) => {
       let valorA, valorB;
@@ -149,7 +163,6 @@ function Insumos() {
 
   const totalInsumos = insumos.length;
   const totalCategorias = new Set(insumos.map((i) => i.categoria_id).filter(Boolean)).size;
-  const conStockBajo = insumos.filter((i) => parseFloat(i.cantidad_actual) <= STOCK_BAJO_UMBRAL).length;
 
   return (
     <div>
@@ -169,10 +182,19 @@ function Insumos() {
         {conStockBajo > 0 && (
           <>
             <span className="w-1 h-1 rounded-full bg-pizarra-700/30" />
-            <span className="flex items-center gap-1 text-terracota-600 font-medium">
+            <button
+              type="button"
+              onClick={() => setSoloStockBajo((v) => !v)}
+              aria-pressed={soloStockBajo}
+              title={soloStockBajo ? 'Volver a ver todos' : 'Ver solo los de stock bajo'}
+              className={`flex items-center gap-1 text-terracota-600 font-medium rounded-full px-2.5 py-1 transition-colors ${
+                soloStockBajo ? 'bg-terracota-500/15 ring-1 ring-terracota-500' : 'hover:bg-terracota-500/10'
+              }`}
+            >
               <AlertTriangle size={13} />
               {conStockBajo} con stock bajo
-            </span>
+              {soloStockBajo && <span className="underline ml-1">· ver todos</span>}
+            </button>
           </>
         )}
       </div>
@@ -206,17 +228,13 @@ function Insumos() {
             <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
               Categoría
             </label>
-            <select
+            <SelectorCategoria
               value={categoriaId}
-              onChange={(e) => setCategoriaId(e.target.value)}
+              onChange={setCategoriaId}
+              categorias={categorias}
+              onCreada={agregarCategoria}
               required
-              className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
-            >
-              <option value="">Selecciona...</option>
-              {categorias.map((c) => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
-              ))}
-            </select>
+            />
           </div>
 
           <div>
@@ -331,7 +349,7 @@ function Insumos() {
               </thead>
               <tbody>
                 {insumosFiltrados.map((insumo) => {
-                  const stockBajo = parseFloat(insumo.cantidad_actual) <= STOCK_BAJO_UMBRAL;
+                  const stockBajo = esStockBajo(insumo);
                   return (
                     <tr
                       key={insumo.id}

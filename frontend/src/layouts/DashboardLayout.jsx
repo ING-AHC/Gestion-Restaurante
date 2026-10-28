@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Package,
   Truck,
-  Tags,
   ShoppingCart,
   UtensilsCrossed,
   Receipt,
@@ -29,7 +28,7 @@ const navItems = [
   { to: '/caja', label: 'Caja', icon: Wallet, roles: ['admin', 'caja'] },
   { to: '/insumos', label: 'Insumos', icon: Package, roles: ['admin'] },
   { to: '/proveedores', label: 'Proveedores', icon: Truck, roles: ['admin'] },
-  { to: '/categorias-gasto', label: 'Categorías de gasto', icon: Tags, roles: ['admin'] },
+
   { to: '/compras', label: 'Compras', icon: ShoppingCart, roles: ['admin'] },
   { to: '/productos', label: 'Productos', icon: UtensilsCrossed, roles: ['admin'] },
   { to: '/ventas', label: 'Ventas', icon: Receipt, roles: ['admin'] },
