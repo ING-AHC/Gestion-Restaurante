@@ -118,6 +118,8 @@ export default function Cocina() {
   const contenedorRef = useRef(null);
   const firma = JSON.stringify(pedidos);
   useLayoutEffect(() => {
+    // Solo la pantalla de cocina (la TV) se autoajusta; el administrador la ve con el tamaño normal
+    if (user?.rol !== 'cocina') return undefined;
     const raiz = document.documentElement;
     const ajustar = () => {
       const el = contenedorRef.current;
@@ -131,8 +133,8 @@ export default function Cocina() {
     };
     ajustar();
     window.addEventListener('resize', ajustar);
-    return () => window.removeEventListener('resize', ajustar);
-  }, [firma]);
+     return () => window.removeEventListener('resize', ajustar);
+  }, [firma, user?.rol]);
   useEffect(() => () => { document.documentElement.style.fontSize = ''; }, []);
 
   // Dos pitidos seguidos, para que se oigan por encima del ruido de la cocina
