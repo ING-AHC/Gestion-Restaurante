@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Plus, Minus, Send, MessageSquare, Check, X, PlusCircle } from 'lucide-react';
-import { crearPedido, agregarItems, getPedidos, cambiarEstado } from '../services/pedidoService';
+import { Plus, Minus, Send, MessageSquare, Check, X, PlusCircle, Pencil } from 'lucide-react';
+import {
+  crearPedido,
+  agregarItems,
+  getPedidos,
+  cambiarEstado,
+  quitarItem,
+  editarItem,
+  cambiarMesa,
+} from '../services/pedidoService';
 import { getMenuHoy } from '../services/menuService';
 import { useDialogos } from '../components/dialogosContexto';
 
@@ -26,8 +34,9 @@ const posicion = (t) => (ORDEN_TIPOS.includes(t) ? ORDEN_TIPOS.indexOf(t) : ORDE
 
 const cop = (n) => `${n < 0 ? '−' : ''}$${Math.abs(Number(n)).toLocaleString('es-CO')}`;
 
-const resumen = (it) =>
-  `${it.cantidad}× ${it.producto_nombre}` +
+// Texto de un producto de un pedido ya enviado, sin la cantidad
+const textoLinea = (it) =>
+  `${it.producto_nombre}` +
   (it.sopa_nombre ? ` (${it.sopa_nombre})` : it.sin_sopa ? ' (sin sopa)' : '') +
   (it.principio_nombre ? ` + ${it.principio_nombre}` : it.sin_principio ? ' (sin principio)' : '');
 
@@ -41,6 +50,8 @@ export default function Pedidos() {
   const [activos, setActivos] = useState([]);
   const [agregandoA, setAgregandoA] = useState(null); // pedido abierto al que se le suman productos
   const [enviando, setEnviando] = useState(false);
+  const [editandoMesa, setEditandoMesa] = useState(null); // { id, valor }: cambiando la mesa de un pedido enviado
+  const [editandoNota, setEditandoNota] = useState(null); // { id, valor }: cambiando la nota de un producto enviado
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const { confirmar } = useDialogos();
@@ -237,6 +248,49 @@ export default function Pedidos() {
     cargarActivos();
   };
 
+  // --- Corregir un pedido ya enviado (mientras no se cobre) ---
+  const corregir = async (accion, mensajeError) => {
+    setError('');
+    setOk('');
+    try {
+      await accion();
+    } catch (e) {
+      setError(e.response?.data?.error || mensajeError);
+    }
+    cargarActivos();
+  };
+
+  const quitarLinea = async (p, it) => {
+    const seguro = await confirmar({
+      titulo: 'Quitar producto',
+      mensaje: `¿Quitar "${it.producto_nombre}" del pedido de la mesa ${p.mesa}? Si cocina ya lo preparó, se gastó.`,
+      textoConfirmar: 'Sí, quitar',
+      textoCancelar: 'No, volver',
+      peligro: true,
+    });
+    if (!seguro) return;
+    corregir(() => quitarItem(p.id, it.detalle_id), 'No se pudo quitar el producto');
+  };
+
+  const cambiarCantidadLinea = (p, it, delta) => {
+    const nueva = it.cantidad + delta;
+    if (nueva < 1 || nueva > 100) return;
+    corregir(() => editarItem(p.id, it.detalle_id, { cantidad: nueva }), 'No se pudo cambiar la cantidad');
+  };
+
+  const guardarNota = () => {
+    const { p, it, valor } = editandoNota;
+    setEditandoNota(null);
+    corregir(() => editarItem(p.id, it.detalle_id, { nota: valor.trim() }), 'No se pudo guardar la nota');
+  };
+
+  const guardarMesa = () => {
+    const { p, valor } = editandoMesa;
+    setEditandoMesa(null);
+    if (!valor.trim() || valor.trim() === p.mesa) return;
+    corregir(() => cambiarMesa(p.id, valor.trim()), 'No se pudo cambiar la mesa');
+  };
+
   const textoBoton = enviando
     ? 'Enviando…'
     : totalItems === 0
@@ -267,10 +321,139 @@ export default function Pedidos() {
             return (
               <div key={p.id} className="border-t border-pizarra-900/10 pt-3 first:border-0 first:pt-0 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold">Mesa {p.mesa}</span>
-                  <span className={`text-xs px-2 py-1 rounded-full ${e.clase}`}>{e.texto}</span>
+                  {editandoMesa?.p.id === p.id ? (
+                    <form
+                      className="flex items-center gap-2 flex-1"
+                      onSubmit={(ev) => {
+                        ev.preventDefault();
+                        guardarMesa();
+                      }}
+                    >
+                      <input
+                        value={editandoMesa.valor}
+                        onChange={(ev) => setEditandoMesa({ p, valor: ev.target.value })}
+                        maxLength={30}
+                        autoFocus
+                        aria-label="Nueva mesa"
+                        className="flex-1 min-w-0 rounded-lg border border-pizarra-900/20 bg-white px-3 py-2 text-sm"
+                      />
+                      <button type="submit" aria-label="Guardar mesa" className="w-10 h-10 rounded-full bg-mostaza-500 flex items-center justify-center">
+                        <Check size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditandoMesa(null)}
+                        aria-label="Cancelar cambio de mesa"
+                        className="w-10 h-10 rounded-full border border-pizarra-900/20 flex items-center justify-center"
+                      >
+                        <X size={16} />
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <span className="font-semibold flex items-center gap-1">
+                        Mesa {p.mesa}
+                        <button
+                          onClick={() => setEditandoMesa({ p, valor: p.mesa })}
+                          title="Cambiar de mesa"
+                          aria-label={`Cambiar la mesa ${p.mesa}`}
+                          className="w-8 h-8 flex items-center justify-center text-pizarra-900/50"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </span>
+                      <span className={`text-xs px-2 py-1 rounded-full ${e.clase}`}>{e.texto}</span>
+                    </>
+                  )}
                 </div>
-                <p className="text-sm text-pizarra-900/70">{p.items.map(resumen).join(', ')}</p>
+
+                {/* Productos del pedido: se pueden corregir mientras no se cobre */}
+                <ul className="space-y-2">
+                  {p.items.map((it) => {
+                    const cantidadFija = it.tipo === 'ejecutivo';
+                    const editNota = editandoNota?.it.detalle_id === it.detalle_id;
+                    return (
+                      <li key={it.detalle_id} className="text-sm">
+                        <div className="flex items-start gap-2">
+                          {cantidadFija ? (
+                            <span className="font-semibold w-7 shrink-0 pt-1.5">{it.cantidad}×</span>
+                          ) : (
+                            <span className="flex items-center gap-1 shrink-0">
+                              <button
+                                onClick={() => cambiarCantidadLinea(p, it, -1)}
+                                disabled={it.cantidad <= 1}
+                                aria-label={`Quitar uno de ${it.producto_nombre}`}
+                                className="w-8 h-8 rounded-full border border-pizarra-900/20 flex items-center justify-center disabled:opacity-30"
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <span className="w-5 text-center font-semibold">{it.cantidad}</span>
+                              <button
+                                onClick={() => cambiarCantidadLinea(p, it, 1)}
+                                aria-label={`Agregar uno de ${it.producto_nombre}`}
+                                className="w-8 h-8 rounded-full border border-pizarra-900/20 flex items-center justify-center"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </span>
+                          )}
+                          <div className="flex-1 min-w-0 pt-1.5 text-pizarra-900/80">
+                            <p>{textoLinea(it)}</p>
+                            {it.nota && !editNota && <p className="text-xs text-pizarra-900/70">↳ {it.nota}</p>}
+                          </div>
+                          <button
+                            onClick={() => setEditandoNota({ p, it, valor: it.nota || '' })}
+                            title="Nota del producto"
+                            aria-label={`Nota de ${it.producto_nombre}`}
+                            className="w-8 h-8 flex items-center justify-center text-pizarra-900/50 shrink-0"
+                          >
+                            <MessageSquare size={14} />
+                          </button>
+                          {p.items.length > 1 && (
+                            <button
+                              onClick={() => quitarLinea(p, it)}
+                              title="Quitar este producto"
+                              aria-label={`Quitar ${it.producto_nombre} del pedido`}
+                              className="w-8 h-8 flex items-center justify-center text-terracota-600 shrink-0"
+                            >
+                              <X size={16} />
+                            </button>
+                          )}
+                        </div>
+                        {editNota && (
+                          <form
+                            className="flex items-center gap-2 mt-1"
+                            onSubmit={(ev) => {
+                              ev.preventDefault();
+                              guardarNota();
+                            }}
+                          >
+                            <input
+                              value={editandoNota.valor}
+                              onChange={(ev) => setEditandoNota({ ...editandoNota, valor: ev.target.value })}
+                              maxLength={255}
+                              autoFocus
+                              aria-label={`Nota para ${it.producto_nombre}`}
+                              placeholder="Nota (sin cebolla, bien asado…)"
+                              className="flex-1 min-w-0 text-sm rounded-lg border border-pizarra-900/20 bg-white px-3 py-2"
+                            />
+                            <button type="submit" aria-label="Guardar nota" className="w-9 h-9 rounded-full bg-mostaza-500 flex items-center justify-center">
+                              <Check size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditandoNota(null)}
+                              aria-label="Cancelar nota"
+                              className="w-9 h-9 rounded-full border border-pizarra-900/20 flex items-center justify-center"
+                            >
+                              <X size={16} />
+                            </button>
+                          </form>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
                 <button
                   onClick={() => empezarAgregar(p)}
                   className="w-full flex items-center justify-center gap-2 border border-pizarra-900/25 rounded-xl py-3 text-sm font-medium"
@@ -342,6 +525,81 @@ export default function Pedidos() {
             </div>
           )}
         </>
+      )}
+
+      {/* Resumen de lo que llevas escogido, para revisarlo y corregirlo antes de enviar */}
+      {totalItems > 0 && (
+        <div className="bg-papel-card rounded-2xl shadow-sm border border-mostaza-500/50 p-4 space-y-2">
+          <p className="text-sm font-semibold text-pizarra-900">
+            {agregandoA ? 'Lo que vas a agregar' : 'Llevas en este pedido'} ({totalItems})
+          </p>
+          <ul className="space-y-1.5">
+            {normales.map((i) => (
+              <li key={i.producto.id} className="flex items-center gap-2 text-sm">
+                <span className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => cambiar(i.producto, -1)}
+                    aria-label={`Quitar uno de ${i.producto.nombre}`}
+                    className="w-8 h-8 rounded-full border border-pizarra-900/20 flex items-center justify-center"
+                  >
+                    <Minus size={14} />
+                  </button>
+                  <span className="w-5 text-center font-semibold">{i.cantidad}</span>
+                  <button
+                    onClick={() => cambiar(i.producto, 1)}
+                    disabled={sinExistencias(i.producto)}
+                    aria-label={`Agregar uno de ${i.producto.nombre}`}
+                    className="w-8 h-8 rounded-full border border-pizarra-900/20 flex items-center justify-center disabled:opacity-30"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </span>
+                <span className="flex-1 min-w-0 truncate">
+                  {i.producto.nombre}
+                  {i.nota ? <span className="text-pizarra-900/60"> · {i.nota}</span> : null}
+                </span>
+                <span className="font-medium shrink-0">{cop(i.cantidad * Number(i.producto.precio))}</span>
+                <button
+                  onClick={() => cambiar(i.producto, -i.cantidad)}
+                  aria-label={`Quitar ${i.producto.nombre} del pedido`}
+                  className="w-8 h-8 flex items-center justify-center text-terracota-600 shrink-0"
+                >
+                  <X size={16} />
+                </button>
+              </li>
+            ))}
+            {platos.map((l) => {
+              const sopa = l.sopa === 'sin' ? 'sin sopa' : sopas.find((s) => s.id === l.sopa)?.nombre;
+              const principio =
+                l.principio === 'sin' ? 'sin principio' : principios.find((pr) => pr.id === l.principio)?.nombre;
+              const falta = !l.sopa || (principios.length > 0 && !l.principio);
+              return (
+                <li key={l.key} className="flex items-center gap-2 text-sm">
+                  <span className="font-semibold w-7 shrink-0 text-center">1×</span>
+                  <span className="flex-1 min-w-0">
+                    {l.producto.nombre}
+                    <span className={falta ? 'text-terracota-600' : 'text-pizarra-900/60'}>
+                      {' · '}
+                      {[sopa || 'falta la sopa', principios.length > 0 ? principio || 'falta el principio' : null]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </span>
+                  <span className="font-medium shrink-0">
+                    {cop(Number(l.producto.precio) - (l.sopa === 'sin' ? DESCUENTO_SIN_SOPA : 0))}
+                  </span>
+                  <button
+                    onClick={() => quitarPlato(l.key)}
+                    aria-label={`Quitar ${l.producto.nombre} del pedido`}
+                    className="w-8 h-8 flex items-center justify-center text-terracota-600 shrink-0"
+                  >
+                    <X size={16} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       {menu.length === 0 && (
@@ -524,11 +782,7 @@ export default function Pedidos() {
                 {principios.length > 0 && (
                   <div>
                     <p className={`text-xs font-semibold ${l.principio ? 'text-pizarra-900/70' : 'text-terracota-600'}`}>
-                      {!l.principio
-                        ? 'Escoge el principio de este plato'
-                        : l.principio === 'sin'
-                          ? 'Sin principio'
-                          : 'Principio'}
+                      {!l.principio ? 'Escoge el principio de este plato' : l.principio === 'sin' ? 'Sin principio' : 'Principio'}
                     </p>
                     <div className="flex flex-wrap gap-2 mt-2">
                       {principios.map((pr) => {

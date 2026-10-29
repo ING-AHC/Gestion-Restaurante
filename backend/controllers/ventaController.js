@@ -1,5 +1,5 @@
 const pool = require('../config/db');
-const { ErrorNegocio, registrarVenta } = require('../services/ventaService');
+const { ErrorNegocio, registrarVenta, leerPago } = require('../services/ventaService');
 
 const createVenta = async (req, res) => {
   const { tipo, items, fecha } = req.body;
@@ -46,8 +46,9 @@ const createVenta = async (req, res) => {
   const client = await pool.connect();
 
   try {
+    const pago = leerPago(req.body);
     await client.query('BEGIN');
-    const venta = await registrarVenta(client, userId, { tipo: tipoVenta, fecha, items: lineas });
+    const venta = await registrarVenta(client, userId, { tipo: tipoVenta, fecha, items: lineas, pago });
     await client.query('COMMIT');
 
     res.status(201).json(venta);
@@ -72,6 +73,8 @@ const getVentas = async (req, res) => {
          v.id,
          v.tipo,
          v.fecha,
+         v.metodo_pago,
+         v.monto_efectivo,
          json_agg(
            json_build_object(
              'producto_nombre', COALESCE(p.nombre, vd.concepto, 'Producto eliminado'),

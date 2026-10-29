@@ -1,5 +1,5 @@
 const pool = require('../config/db');
-const { ErrorNegocio, registrarVenta } = require('../services/ventaService');
+const { ErrorNegocio, registrarVenta, leerPago } = require('../services/ventaService');
 const { DESCUENTO_SIN_SOPA } = require('./menuController');
 
 const ESTADOS_ACTIVOS = ['pendiente', 'en_preparacion', 'listo'];
@@ -92,7 +92,7 @@ const validarLineas = async (client, userId, lineas) => {
     sopasValidas = new Set(sopas.rows.map((s) => s.id));
   }
 
-  // Principios activos hoy: si hay, cada ejecutivo debe llevar uno (o marcar "sin principio")
+  // Principios activos hoy: si hay, cada ejecutivo debe llevar uno
   const principios = await client.query(
     `SELECT id FROM productos WHERE user_id = $1 AND tipo = 'principio' AND disponible_hoy`,
     [userId]
@@ -260,7 +260,9 @@ const getPedidos = async (req, res) => {
          COALESCE(
            json_agg(
              json_build_object(
+               'detalle_id', d.id,
                'producto_id', d.producto_id,
+               'tipo', pr.tipo,
                'producto_nombre', pr.nombre,
                'cantidad', d.cantidad,
                'nota', d.nota,
@@ -294,6 +296,156 @@ const getPedidos = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error en el servidor' });
+  }
+};
+
+// Bloquea un pedido para corregirlo. El mesero solo toca los suyos; caja y admin, cualquiera.
+// Solo se corrige mientras no se haya cobrado.
+const bloquearPedidoEditable = async (client, req, id) => {
+  const soloDe = req.rol === 'mesero' ? req.actorId : null;
+  const pedidoResult = await client.query(
+    `SELECT * FROM pedidos
+     WHERE id = $1 AND user_id = $2 AND ($3::int IS NULL OR creado_por = $3)
+     FOR UPDATE`,
+    [id, req.userId, soloDe]
+  );
+  if (pedidoResult.rows.length === 0) {
+    throw new ErrorNegocio(404, 'Pedido no encontrado');
+  }
+  const pedido = pedidoResult.rows[0];
+  if (pedido.venta_id || !ESTADOS_ACTIVOS.includes(pedido.estado)) {
+    throw new ErrorNegocio(409, 'Este pedido ya se cobró o se cerró: ya no se puede corregir');
+  }
+  return pedido;
+};
+
+const leerId = (valor) => {
+  const n = Number(valor);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+// Quita un producto de un pedido que todavía no se cobra
+const quitarItem = async (req, res) => {
+  const id = leerId(req.params.id);
+  const detalleId = leerId(req.params.detalleId);
+  if (!id || !detalleId) return res.status(400).json({ error: 'Pedido o producto no válido' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await bloquearPedidoEditable(client, req, id);
+
+    const lineas = await client.query('SELECT id FROM pedido_detalle WHERE pedido_id = $1', [id]);
+    if (!lineas.rows.some((l) => l.id === detalleId)) {
+      throw new ErrorNegocio(404, 'Ese producto ya no está en el pedido');
+    }
+    if (lineas.rows.length <= 1) {
+      throw new ErrorNegocio(409, 'Es el único producto del pedido: cancela el pedido completo');
+    }
+
+    await client.query('DELETE FROM pedido_detalle WHERE id = $1 AND pedido_id = $2', [detalleId, id]);
+    await client.query('UPDATE pedidos SET actualizado_en = NOW() WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+    res.json({ message: 'Producto quitado del pedido' });
+  } catch (error) {
+    await manejarError(error, res, client, 'Error al quitar el producto del pedido');
+  } finally {
+    client.release();
+  }
+};
+
+// Cambia la cantidad y/o la nota de un producto de un pedido que todavía no se cobra
+const editarItem = async (req, res) => {
+  const id = leerId(req.params.id);
+  const detalleId = leerId(req.params.detalleId);
+  if (!id || !detalleId) return res.status(400).json({ error: 'Pedido o producto no válido' });
+
+  const cambiaCantidad = req.body.cantidad !== undefined;
+  const cambiaNota = req.body.nota !== undefined;
+  if (!cambiaCantidad && !cambiaNota) {
+    return res.status(400).json({ error: 'No hay nada que cambiar' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const pedido = await bloquearPedidoEditable(client, req, id);
+
+    const linea = await client.query(
+      `SELECT d.id, d.cantidad, pr.tipo, pr.nombre
+       FROM pedido_detalle d JOIN productos pr ON pr.id = d.producto_id
+       WHERE d.id = $1 AND d.pedido_id = $2`,
+      [detalleId, id]
+    );
+    if (linea.rows.length === 0) {
+      throw new ErrorNegocio(404, 'Ese producto ya no está en el pedido');
+    }
+    const actual = linea.rows[0];
+
+    let cantidad = actual.cantidad;
+    if (cambiaCantidad) {
+      cantidad = Number(req.body.cantidad);
+      if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 100) {
+        throw new ErrorNegocio(400, 'La cantidad debe ser un número entero entre 1 y 100');
+      }
+      if (actual.tipo === 'ejecutivo' && cantidad !== 1) {
+        throw new ErrorNegocio(400, `"${actual.nombre}" se pide de a uno; agrega otro plato para escoger su sopa`);
+      }
+    }
+
+    const nota = cambiaNota ? (req.body.nota ? String(req.body.nota).trim().slice(0, 255) || null : null) : undefined;
+
+    await client.query(
+      `UPDATE pedido_detalle
+       SET cantidad = $1, nota = CASE WHEN $2::boolean THEN $3 ELSE nota END
+       WHERE id = $4`,
+      [cantidad, cambiaNota, nota ?? null, detalleId]
+    );
+
+    // Si ya estaba entregado y piden más, cocina lo vuelve a ver; si baja o cambia la nota, solo se actualiza
+    const subio = cambiaCantidad && cantidad > actual.cantidad;
+    await client.query(
+      `UPDATE pedidos
+       SET estado = CASE WHEN $2::boolean AND estado = 'listo' THEN 'pendiente' ELSE estado END,
+           actualizado_en = NOW()
+       WHERE id = $1`,
+      [id, subio]
+    );
+
+    await client.query('COMMIT');
+    res.json({ message: 'Producto actualizado', estado: pedido.estado });
+  } catch (error) {
+    await manejarError(error, res, client, 'Error al corregir el producto del pedido');
+  } finally {
+    client.release();
+  }
+};
+
+// Cambia la mesa de un pedido que todavía no se cobra
+const editarPedido = async (req, res) => {
+  const id = leerId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Pedido no válido' });
+
+  const mesa = String(req.body.mesa ?? '').trim();
+  if (!mesa || mesa.length > 30) {
+    return res.status(400).json({ error: 'La mesa es obligatoria (máximo 30 caracteres)' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await bloquearPedidoEditable(client, req, id);
+    const actualizado = await client.query(
+      'UPDATE pedidos SET mesa = $1, actualizado_en = NOW() WHERE id = $2 RETURNING *',
+      [mesa, id]
+    );
+    await client.query('COMMIT');
+    res.json(actualizado.rows[0]);
+  } catch (error) {
+    await manejarError(error, res, client, 'Error al cambiar la mesa');
+  } finally {
+    client.release();
   }
 };
 
@@ -424,7 +576,7 @@ const confirmarPedido = async (req, res) => {
       };
     });
 
-    const venta = await registrarVenta(client, userId, { tipo, fecha, items });
+    const venta = await registrarVenta(client, userId, { tipo, fecha, items, pago: leerPago(req.body) });
 
     const actualizado = await client.query(
       `UPDATE pedidos
@@ -443,4 +595,13 @@ const confirmarPedido = async (req, res) => {
   }
 };
 
-module.exports = { createPedido, agregarItems, getPedidos, updateEstado, confirmarPedido };
+module.exports = {
+  createPedido,
+  agregarItems,
+  getPedidos,
+  updateEstado,
+  confirmarPedido,
+  quitarItem,
+  editarItem,
+  editarPedido,
+};

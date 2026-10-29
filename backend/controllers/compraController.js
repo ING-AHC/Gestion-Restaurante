@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { ErrorNegocio, leerPago } = require('../services/ventaService');
 
 const idsUnicos = (lista) => [...new Set(lista.filter(Boolean).map(Number))];
 
@@ -69,12 +70,13 @@ const createCompra = async (req, res) => {
     }
 
     const montoTotal = items.reduce((total, item) => total + Number(item.valor_unitario), 0);
+    const { metodo, montoEfectivo } = leerPago(req.body, montoTotal);
 
     const compraResult = await client.query(
-      `INSERT INTO compras (proveedor_id, monto_total, estado_pago, fecha, user_id)
-       VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5)
+      `INSERT INTO compras (proveedor_id, monto_total, estado_pago, fecha, user_id, metodo_pago, monto_efectivo)
+       VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7)
        RETURNING *`,
-      [proveedor_id || null, montoTotal, estado_pago || 'pendiente', fecha, userId]
+      [proveedor_id || null, montoTotal, estado_pago || 'pendiente', fecha, userId, metodo, montoEfectivo]
     );
 
     const compraId = compraResult.rows[0].id;
@@ -107,6 +109,9 @@ const createCompra = async (req, res) => {
     res.status(201).json(compraResult.rows[0]);
   } catch (error) {
     await client.query('ROLLBACK');
+    if (error instanceof ErrorNegocio) {
+      return res.status(error.status).json({ error: error.message });
+    }
     console.error(error);
     res.status(500).json({ error: 'Error al registrar la compra' });
   } finally {
@@ -125,6 +130,8 @@ const getCompras = async (req, res) => {
          c.monto_total,
          c.estado_pago,
          c.fecha,
+         c.metodo_pago,
+         c.monto_efectivo,
          p.nombre AS proveedor_nombre,
          json_agg(
            json_build_object(

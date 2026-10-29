@@ -4,6 +4,8 @@ import { Receipt, CalendarDays } from 'lucide-react';
 import { getVentas, createVenta } from '../services/ventaService';
 import { getProductos } from '../services/productoService';
 import InputMoneda from '../components/InputMoneda';
+import SelectorPago from '../components/SelectorPago';
+import { etiquetaPago, pagoValido } from '../utils/pago';
 
 function Ventas() {
   const [ventas, setVentas] = useState([]);
@@ -12,6 +14,7 @@ function Ventas() {
   const [error, setError] = useState('');
 
   const [tipoVenta, setTipoVenta] = useState('venta');
+  const [pago, setPago] = useState({ metodo: 'efectivo', montoEfectivo: '' });
   const [fechaVenta, setFechaVenta] = useState(new Date().toISOString().split('T')[0]);
   const [items, setItems] = useState([
     { producto_id: '', cantidad: '1', adicion_descripcion: '', adicion_valor: '' },
@@ -86,11 +89,20 @@ function Ventas() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (tipoVenta === 'venta' && !pagoValido(pago.metodo, pago.montoEfectivo, totalVenta)) {
+      return setError('En el pago mixto escribe cuánto fue en efectivo (menos que el total)');
+    }
 
     try {
       const payload = {
         tipo: tipoVenta,
         fecha: fechaVenta,
+        ...(tipoVenta === 'venta'
+          ? {
+              metodo_pago: pago.metodo,
+              ...(pago.metodo === 'mixto' ? { monto_efectivo: Number(pago.montoEfectivo) } : {}),
+            }
+          : {}),
         items: items.map((item) =>
           item.servicio
             ? {
@@ -111,6 +123,7 @@ function Ventas() {
       await recargarVentas();
 
       setTipoVenta('venta');
+      setPago({ metodo: 'efectivo', montoEfectivo: '' });
       setFechaVenta(new Date().toISOString().split('T')[0]);
       setItems([{ producto_id: '', cantidad: '1', adicion_descripcion: '', adicion_valor: '' }]);
     } catch (err) {
@@ -326,6 +339,15 @@ function Ventas() {
             )}
           </div>
 
+          {tipoVenta === 'venta' && (
+            <SelectorPago
+              metodo={pago.metodo}
+              montoEfectivo={pago.montoEfectivo}
+              total={totalVenta}
+              onCambio={setPago}
+            />
+          )}
+
           <div className="flex items-center justify-between border-t border-pizarra-900/10 pt-4">
             <span className="text-sm font-semibold text-pizarra-700">Total</span>
             <span className="font-display text-lg font-bold text-pizarra-900">
@@ -393,6 +415,11 @@ function Ventas() {
                     >
                       {venta.tipo === 'venta' ? 'Venta' : 'Consumo interno'}
                     </span>
+                    {venta.tipo === 'venta' && (
+                      <span className="text-xs text-pizarra-700/70 mr-auto ml-2">
+                        {etiquetaPago(venta.metodo_pago, venta.monto_efectivo, venta.total)}
+                      </span>
+                    )}
                     <span className="font-display font-bold text-pizarra-900 text-sm">
                       ${parseFloat(venta.total).toLocaleString()}
                     </span>

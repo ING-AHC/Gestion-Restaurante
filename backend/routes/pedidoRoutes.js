@@ -7,12 +7,18 @@ const {
   getPedidos,
   updateEstado,
   confirmarPedido,
+  quitarItem,
+  editarItem,
+  editarPedido,
 } = require('../controllers/pedidoController');
 
 router.post('/', protect, createPedido);
 router.get('/', protect, getPedidos);
 router.post('/:id/items', protect, agregarItems);
 router.patch('/:id/estado', protect, updateEstado);
+router.patch('/:id', protect, editarPedido);
+router.patch('/:id/items/:detalleId', protect, editarItem);
+router.delete('/:id/items/:detalleId', protect, quitarItem);
 router.post('/:id/confirmar', protect, confirmarPedido);
 
 module.exports = router;

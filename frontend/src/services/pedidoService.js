@@ -29,3 +29,18 @@ export const confirmarPedido = async (id, body = {}) => {
   const response = await api.post(`/pedidos/${id}/confirmar`, body);
   return response.data;
 };
+
+export const quitarItem = async (pedidoId, detalleId) => {
+  const response = await api.delete(`/pedidos/${pedidoId}/items/${detalleId}`);
+  return response.data;
+};
+
+export const editarItem = async (pedidoId, detalleId, cambios) => {
+  const response = await api.patch(`/pedidos/${pedidoId}/items/${detalleId}`, cambios);
+  return response.data;
+};
+
+export const cambiarMesa = async (pedidoId, mesa) => {
+  const response = await api.patch(`/pedidos/${pedidoId}`, { mesa });
+  return response.data;
+};

@@ -107,6 +107,7 @@ const getProductos = async (req, res) => {
 const updateProducto = async (req, res) => {
   const { id } = req.params;
   const { precio } = req.body;
+  const cambiaInsumo = Object.prototype.hasOwnProperty.call(req.body, 'insumo_id');
   const nombre = req.body.nombre === undefined || req.body.nombre === null ? null : String(req.body.nombre).trim();
   const userId = req.userId;
 
@@ -123,12 +124,35 @@ const updateProducto = async (req, res) => {
       return res.status(409).json({ error: mensajeRepetido(nombre) });
     }
 
+    // El insumo que descuenta una bebida se puede ligar, cambiar o quitar (null) al editar
+    let insumoNuevo = null;
+    if (cambiaInsumo) {
+      const actual = await pool.query('SELECT tipo FROM productos WHERE id = $1 AND user_id = $2', [id, userId]);
+      if (actual.rows.length === 0) {
+        return res.status(404).json({ error: 'Producto no encontrado' });
+      }
+      if (actual.rows[0].tipo !== 'bebida') {
+        return res.status(400).json({ error: 'Solo las bebidas se ligan a un insumo; los platos usan receta' });
+      }
+      if (req.body.insumo_id) {
+        insumoNuevo = Number(req.body.insumo_id);
+        const insumoCheck = Number.isInteger(insumoNuevo)
+          ? await pool.query('SELECT id FROM insumos WHERE id = $1 AND user_id = $2', [insumoNuevo, userId])
+          : { rows: [] };
+        if (insumoCheck.rows.length === 0) {
+          return res.status(404).json({ error: 'Insumo no encontrado' });
+        }
+      }
+    }
+
     const updated = await pool.query(
       `UPDATE productos
-       SET nombre = COALESCE($1, nombre), precio = COALESCE($2, precio)
+       SET nombre = COALESCE($1, nombre),
+           precio = COALESCE($2, precio),
+           insumo_id = CASE WHEN $5::boolean THEN $6::int ELSE insumo_id END
        WHERE id = $3 AND user_id = $4
        RETURNING *`,
-      [nombre, precio, id, userId]
+      [nombre, precio, id, userId, cambiaInsumo, insumoNuevo]
     );
 
     if (updated.rows.length === 0) {
@@ -224,6 +248,13 @@ const deleteProducto = async (req, res) => {
 
     res.json({ message: 'Producto eliminado correctamente' });
   } catch (error) {
+    // 23503: el producto ya está en algún pedido y la base no deja borrarlo
+    if (error.code === '23503') {
+      return res.status(409).json({
+        error:
+          'Este producto ya se usó en pedidos o ventas y no se puede eliminar. Puedes editarlo o quitarlo del menú de hoy.',
+      });
+    }
     console.error(error);
     res.status(500).json({ error: 'Error al eliminar el producto' });
   }

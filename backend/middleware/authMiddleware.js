@@ -10,6 +10,9 @@ const PERMISOS = {
     ['POST', /^\/api\/pedidos\/?$/],
     ['PATCH', new RegExp(`^/api/pedidos/${ID}/estado/?$`)],
     ['POST', new RegExp(`^/api/pedidos/${ID}/items/?$`)],
+    ['PATCH', new RegExp(`^/api/pedidos/${ID}/?$`)],
+    ['PATCH', new RegExp(`^/api/pedidos/${ID}/items/${ID}/?$`)],
+    ['DELETE', new RegExp(`^/api/pedidos/${ID}/items/${ID}/?$`)],
   ],
   cocina: [
     ['GET', /^\/api\/pedidos\/?$/],
@@ -21,6 +24,9 @@ const PERMISOS = {
     ['POST', /^\/api\/pedidos\/?$/],
     ['PATCH', new RegExp(`^/api/pedidos/${ID}/estado/?$`)],
     ['POST', new RegExp(`^/api/pedidos/${ID}/items/?$`)],
+    ['PATCH', new RegExp(`^/api/pedidos/${ID}/?$`)],
+    ['PATCH', new RegExp(`^/api/pedidos/${ID}/items/${ID}/?$`)],
+    ['DELETE', new RegExp(`^/api/pedidos/${ID}/items/${ID}/?$`)],
     ['POST', new RegExp(`^/api/pedidos/${ID}/confirmar/?$`)],
   ],
 };

@@ -40,6 +40,7 @@ function Productos() {
   const [productoParaEditar, setProductoParaEditar] = useState(null);
   const [editNombre, setEditNombre] = useState('');
   const [editPrecio, setEditPrecio] = useState('');
+  const [editInsumo, setEditInsumo] = useState(''); // insumo que descuenta una bebida ('' = ninguno)
   const [editError, setEditError] = useState('');
 
   const [busqueda, setBusqueda] = useState('');
@@ -146,6 +147,7 @@ function Productos() {
     setProductoParaEditar(producto);
     setEditNombre(producto.nombre);
     setEditPrecio(Math.round(parseFloat(producto.precio)).toString());
+    setEditInsumo(producto.insumo_id ? String(producto.insumo_id) : '');
     setEditError('');
   };
 
@@ -157,6 +159,8 @@ function Productos() {
       const actualizado = await updateProducto(productoParaEditar.id, {
         nombre: editNombre,
         precio: parseFloat(editPrecio),
+        // Solo las bebidas se ligan a un insumo; "ninguno" la deja sin descontar inventario
+        ...(productoParaEditar.tipo === 'bebida' ? { insumo_id: editInsumo || null } : {}),
       });
 
       setProductos((prev) =>
@@ -305,6 +309,14 @@ function Productos() {
                       <p className="font-medium text-pizarra-900 text-sm">{producto.nombre}</p>
                       <p className="text-xs text-pizarra-700 capitalize">
                         {producto.tipo} · ${parseFloat(producto.precio).toLocaleString()}
+                        {producto.tipo === 'bebida' && (
+                          <span className={producto.insumo_id ? '' : 'text-mostaza-600'}>
+                            {' · '}
+                            {producto.insumo_id
+                              ? `descuenta: ${insumos.find((i) => i.id === producto.insumo_id)?.nombre ?? 'insumo'}`
+                              : 'sin inventario'}
+                          </span>
+                        )}
                       </p>
                     </div>
 
@@ -478,6 +490,27 @@ function Productos() {
                   className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
                 />
               </div>
+
+              {productoParaEditar.tipo === 'bebida' && (
+                <div>
+                  <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
+                    Insumo que descuenta del inventario
+                  </label>
+                  <select
+                    value={editInsumo}
+                    onChange={(e) => setEditInsumo(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+                  >
+                    <option value="">Ninguno (no descuenta inventario)</option>
+                    {insumos.map((i) => (
+                      <option key={i.id} value={i.id}>{i.nombre}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-pizarra-700/70 mt-1">
+                    Vale desde la próxima venta; lo ya vendido no se descuenta después.
+                  </p>
+                </div>
+              )}
 
               {editError && (
                 <p className="text-terracota-600 text-sm bg-terracota-500/10 rounded-lg px-3 py-2">

@@ -7,6 +7,8 @@ import { getInsumos } from '../services/insumoService';
 import { getCategoriasGasto, createCategoriaGasto } from '../services/categoriaGastoService';
 import InputMoneda from '../components/InputMoneda';
 import SelectorCategoria from '../components/SelectorCategoria';
+import SelectorPago from '../components/SelectorPago';
+import { etiquetaPago, pagoValido } from '../utils/pago';
 
 // Fecha de hoy en la zona horaria del equipo (toISOString usa UTC y de noche daría el día siguiente)
 const hoy = () => {
@@ -23,7 +25,7 @@ const PESTANAS = [
   { id: 'insumos', texto: 'Insumos', proveedor: true },
   { id: 'nomina', texto: 'Nómina', categoria: 'Nómina', proveedor: false },
   { id: 'servicios', texto: 'Servicios', categoria: 'Servicios', proveedor: false },
-  { id: 'casa', texto: 'casa', categoria: 'casa', proveedor: false },
+  { id: 'arriendo', texto: 'Arriendo', categoria: 'Arriendo', proveedor: false },
 ];
 
 const filaVacia = (tab) => {
@@ -57,6 +59,7 @@ function Compras() {
   const [filas, setFilas] = useState(FILAS_INICIALES);
   const [proveedorId, setProveedorId] = useState('');
   const [estadoPago, setEstadoPago] = useState('pagado');
+  const [pago, setPago] = useState({ metodo: 'efectivo', montoEfectivo: '' });
   const [fechaCompra, setFechaCompra] = useState(hoy());
   const [fechaFiltro, setFechaFiltro] = useState(hoy());
 
@@ -138,6 +141,9 @@ function Compras() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (!pagoValido(pago.metodo, pago.montoEfectivo, montoTotal)) {
+      return setError('En el pago mixto escribe cuánto fue en efectivo (menos que el total)');
+    }
     setEnviando(true);
 
     try {
@@ -166,6 +172,8 @@ function Compras() {
       await createCompra({
         proveedor_id: pestana.proveedor ? proveedorId || null : null,
         estado_pago: estadoPago,
+        metodo_pago: pago.metodo,
+        ...(pago.metodo === 'mixto' ? { monto_efectivo: Number(pago.montoEfectivo) } : {}),
         fecha: fechaCompra,
         items,
       });
@@ -176,6 +184,7 @@ function Compras() {
       setFilas((prev) => ({ ...prev, [tab]: [filaVacia(tab)] }));
       setProveedorId('');
       setEstadoPago('pagado');
+      setPago({ metodo: 'efectivo', montoEfectivo: '' });
       setFechaCompra(hoy());
     } catch (err) {
       setError(err.response?.data?.error || 'Error al registrar');
@@ -310,6 +319,13 @@ function Compras() {
             </div>
           </div>
 
+          <SelectorPago
+            metodo={pago.metodo}
+            montoEfectivo={pago.montoEfectivo}
+            total={montoTotal}
+            onCambio={setPago}
+          />
+
           <div className="border-t border-pizarra-900/10 pt-4">
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-semibold text-pizarra-800">
@@ -390,19 +406,19 @@ function Compras() {
                     />
                   )}
 
-                  {(tab === 'general' || tab === 'servicios' || tab === 'casa') && (
+                  {(tab === 'general' || tab === 'servicios' || tab === 'arriendo') && (
                     <input
                       type="text"
                       placeholder={
                         tab === 'servicios'
                           ? 'Qué servicio (agua, luz, gas, internet…)'
-                          : tab === 'casa'
-                            ? 'Detalle (opcional, ej: gastos de la casa)'
+                          : tab === 'arriendo'
+                            ? 'Detalle (opcional, ej: arriendo de octubre)'
                             : 'Descripción (ej: reparación de la nevera)'
                       }
                       value={fila.descripcion}
                       onChange={(e) => cambiarFila(index, 'descripcion', e.target.value)}
-                      required={tab !== 'casa'}
+                      required={tab !== 'arriendo'}
                       maxLength={200}
                       className={`w-full ${campo}`}
                     />
@@ -491,6 +507,9 @@ function Compras() {
                   <div className="flex items-center justify-between mb-1.5">
                     <div>
                       <p className="font-medium text-pizarra-900 text-sm">{tituloDe(compra)}</p>
+                      <p className="text-xs text-pizarra-700/70">
+                        {etiquetaPago(compra.metodo_pago, compra.monto_efectivo, compra.monto_total)}
+                      </p>
                     </div>
 
                     <div className="flex items-center gap-2">

@@ -5,6 +5,27 @@ class ErrorNegocio extends Error {
   }
 }
 
+const METODOS_PAGO = ['efectivo', 'transferencia', 'mixto'];
+
+// Lee cómo se pagó: { metodo_pago, monto_efectivo } -> { metodo, montoEfectivo }
+// En "mixto" el monto en efectivo debe ser mayor que 0 y menor que el total (el resto es transferencia).
+const leerPago = (body = {}, total = null) => {
+  const metodo = body.metodo_pago ? String(body.metodo_pago) : 'efectivo';
+  if (!METODOS_PAGO.includes(metodo)) {
+    throw new ErrorNegocio(400, 'Método de pago no válido: usa efectivo, transferencia o mixto');
+  }
+  if (metodo !== 'mixto') return { metodo, montoEfectivo: null };
+
+  const montoEfectivo = Number(body.monto_efectivo);
+  if (!Number.isFinite(montoEfectivo) || montoEfectivo <= 0) {
+    throw new ErrorNegocio(400, 'En un pago mixto escribe cuánto se pagó en efectivo');
+  }
+  if (total !== null && montoEfectivo >= total) {
+    throw new ErrorNegocio(400, 'En un pago mixto el efectivo debe ser menor que el total');
+  }
+  return { metodo, montoEfectivo };
+};
+
 const TIPOS_CON_RECETA = ['especial', 'rapida', 'ejecutivo', 'sopa', 'principio'];
 
 // Descuenta del inventario lo que lleva la receta de un producto
@@ -27,12 +48,16 @@ const descontarReceta = async (client, userId, productoId, cantidad) => {
 //  - un producto del menú: { producto_id, cantidad, adicion_descripcion, adicion_valor, consumos_extra }
 //    "consumos_extra" son productos que se gastan sin cobrarse aparte (la sopa y el principio de un ejecutivo)
 //  - un servicio que no es un producto: { concepto, precio, cantidad }. No toca el inventario.
-const registrarVenta = async (client, userId, { tipo, fecha, items }) => {
+const registrarVenta = async (client, userId, { tipo, fecha, items, pago }) => {
+  // El consumo interno no mueve plata: no lleva método de pago
+  const { metodo, montoEfectivo } =
+    tipo === 'consumo_interno' ? { metodo: 'efectivo', montoEfectivo: null } : pago || { metodo: 'efectivo', montoEfectivo: null };
+
   const ventaResult = await client.query(
-    `INSERT INTO ventas (tipo, fecha, user_id)
-     VALUES ($1, COALESCE($2, (NOW() AT TIME ZONE 'America/Bogota')::date), $3)
+    `INSERT INTO ventas (tipo, fecha, user_id, metodo_pago, monto_efectivo)
+     VALUES ($1, COALESCE($2, (NOW() AT TIME ZONE 'America/Bogota')::date), $3, $4, $5)
      RETURNING *`,
-    [tipo, fecha, userId]
+    [tipo, fecha, userId, metodo, montoEfectivo]
   );
   const ventaId = ventaResult.rows[0].id;
 
@@ -95,7 +120,19 @@ const registrarVenta = async (client, userId, { tipo, fecha, items }) => {
     }
   }
 
+  // En un pago mixto, el efectivo no puede ser igual o mayor al total de la venta
+  if (metodo === 'mixto') {
+    const total = await client.query(
+      `SELECT COALESCE(SUM(cantidad * precio_unitario + COALESCE(adicion_valor, 0)), 0) AS total
+       FROM venta_detalle WHERE venta_id = $1`,
+      [ventaId]
+    );
+    if (montoEfectivo >= Number(total.rows[0].total)) {
+      throw new ErrorNegocio(400, 'En un pago mixto el efectivo debe ser menor que el total');
+    }
+  }
+
   return ventaResult.rows[0];
 };
 
-module.exports = { ErrorNegocio, registrarVenta };
+module.exports = { ErrorNegocio, registrarVenta, leerPago };

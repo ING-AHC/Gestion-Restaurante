@@ -172,6 +172,10 @@ function Dashboard() {
                 <p className="font-display text-2xl font-bold text-pizarra-900">
                   ${resumen.total_ventas.toLocaleString()}
                 </p>
+                <p className="text-xs text-pizarra-700 mt-0.5">
+                  Efectivo ${(resumen.ventas_efectivo ?? resumen.total_ventas).toLocaleString()} · Transferencia $
+                  {(resumen.ventas_transferencia ?? 0).toLocaleString()}
+                </p>
               </div>
             </motion.div>
 
@@ -188,6 +192,10 @@ function Dashboard() {
                 <p className="text-sm text-pizarra-700 font-medium">Gastos</p>
                 <p className="font-display text-2xl font-bold text-pizarra-900">
                   ${resumen.total_compras.toLocaleString()}
+                </p>
+                <p className="text-xs text-pizarra-700 mt-0.5">
+                  Efectivo ${(resumen.compras_efectivo ?? resumen.total_compras).toLocaleString()} · Transferencia $
+                  {(resumen.compras_transferencia ?? 0).toLocaleString()}
                 </p>
               </div>
             </motion.div>

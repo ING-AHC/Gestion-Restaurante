@@ -34,10 +34,19 @@ const getResumenFinanciero = async (req, res) => {
       : '';
     const paramsCompras = periodo ? [userId, periodo.mes, periodo.anio] : [userId];
 
+    // Cada venta se suma una sola vez, con la parte que entró en efectivo y la que entró por transferencia
     const ventasResult = await pool.query(
-      `SELECT COALESCE(SUM(vd.cantidad * vd.precio_unitario + COALESCE(vd.adicion_valor, 0)), 0) AS total
+      `SELECT
+         COALESCE(SUM(t.total), 0) AS total,
+         COALESCE(SUM(CASE v.metodo_pago
+           WHEN 'efectivo' THEN t.total
+           WHEN 'mixto' THEN LEAST(COALESCE(v.monto_efectivo, 0), t.total)
+           ELSE 0 END), 0) AS efectivo
        FROM ventas v
-       JOIN venta_detalle vd ON vd.venta_id = v.id
+       JOIN (
+         SELECT venta_id, SUM(cantidad * precio_unitario + COALESCE(adicion_valor, 0)) AS total
+         FROM venta_detalle GROUP BY venta_id
+       ) t ON t.venta_id = v.id
        WHERE v.user_id = $1 AND v.tipo = 'venta' ${filtroVentas}`,
       paramsVentas
     );
@@ -51,7 +60,12 @@ const getResumenFinanciero = async (req, res) => {
     );
 
     const comprasResult = await pool.query(
-      `SELECT COALESCE(SUM(monto_total), 0) AS total
+      `SELECT
+         COALESCE(SUM(monto_total), 0) AS total,
+         COALESCE(SUM(CASE metodo_pago
+           WHEN 'efectivo' THEN monto_total
+           WHEN 'mixto' THEN LEAST(COALESCE(monto_efectivo, 0), monto_total)
+           ELSE 0 END), 0) AS efectivo
        FROM compras
        WHERE user_id = $1 ${filtroCompras}`,
       paramsCompras
@@ -61,8 +75,14 @@ const getResumenFinanciero = async (req, res) => {
     const totalConsumoInterno = parseFloat(consumoInternoResult.rows[0].total);
     const totalCompras = parseFloat(comprasResult.rows[0].total);
     const ganancia = totalVentas - totalCompras;
+    const ventasEfectivo = parseFloat(ventasResult.rows[0].efectivo);
+    const comprasEfectivo = parseFloat(comprasResult.rows[0].efectivo);
 
     res.json({
+      ventas_efectivo: ventasEfectivo,
+      ventas_transferencia: totalVentas - ventasEfectivo,
+      compras_efectivo: comprasEfectivo,
+      compras_transferencia: totalCompras - comprasEfectivo,
       total_ventas: totalVentas,
       total_consumo_interno: totalConsumoInterno,
       total_compras: totalCompras,
