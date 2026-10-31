@@ -1,4 +1,4 @@
-﻿const pool = require('../config/db');
+const pool = require('../config/db');
 
 const TIPOS_VALIDOS = ['especial', 'rapida', 'ejecutivo', 'bebida', 'sopa', 'principio'];
 
@@ -55,10 +55,20 @@ const createProducto = async (req, res) => {
     }
 
     const newProducto = await pool.query(
-      `INSERT INTO productos (nombre, tipo, precio, insumo_id, es_sopa, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO productos (nombre, tipo, precio, insumo_id, es_sopa, user_id, precio_abierto, lleva_sopa)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [nombre, tipo, precio, insumoLigado, tipo === 'sopa', userId]
+      [
+        nombre,
+        tipo,
+        precio,
+        insumoLigado,
+        tipo === 'sopa',
+        userId,
+        req.body.precio_abierto === true,
+        // Solo los ejecutivos pueden ir sin sopa ni principio
+        tipo === 'ejecutivo' ? req.body.lleva_sopa !== false : true,
+      ]
     );
 
     res.status(201).json(newProducto.rows[0]);
@@ -108,6 +118,8 @@ const updateProducto = async (req, res) => {
   const { id } = req.params;
   const { precio } = req.body;
   const cambiaInsumo = Object.prototype.hasOwnProperty.call(req.body, 'insumo_id');
+  const precioAbierto = typeof req.body.precio_abierto === 'boolean' ? req.body.precio_abierto : null;
+  const llevaSopa = typeof req.body.lleva_sopa === 'boolean' ? req.body.lleva_sopa : null;
   const nombre = req.body.nombre === undefined || req.body.nombre === null ? null : String(req.body.nombre).trim();
   const userId = req.userId;
 
@@ -149,10 +161,12 @@ const updateProducto = async (req, res) => {
       `UPDATE productos
        SET nombre = COALESCE($1, nombre),
            precio = COALESCE($2, precio),
-           insumo_id = CASE WHEN $5::boolean THEN $6::int ELSE insumo_id END
+           insumo_id = CASE WHEN $5::boolean THEN $6::int ELSE insumo_id END,
+           precio_abierto = COALESCE($7::boolean, precio_abierto),
+           lleva_sopa = CASE WHEN tipo = 'ejecutivo' THEN COALESCE($8::boolean, lleva_sopa) ELSE lleva_sopa END
        WHERE id = $3 AND user_id = $4
        RETURNING *`,
-      [nombre, precio, id, userId, cambiaInsumo, insumoNuevo]
+      [nombre, precio, id, userId, cambiaInsumo, insumoNuevo, precioAbierto, llevaSopa]
     );
 
     if (updated.rows.length === 0) {

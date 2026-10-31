@@ -1,12 +1,12 @@
 const pool = require('../config/db');
 
-// "Incluye sopa" no se guarda por plato: todo ejecutivo la incluye.
+// "Incluye sopa" sale del tipo: todo ejecutivo la incluye, salvo los marcados sin sopa ni principio.
 // El descuento por no llevar sopa es siempre de mil pesos.
 const DESCUENTO_SIN_SOPA = 1000;
 
 const SELECT_MENU = `
-  SELECT p.id, p.nombre, p.tipo, p.precio, p.disponible_hoy, p.es_sopa,
-         (p.tipo = 'ejecutivo') AS incluye_sopa,
+  SELECT p.id, p.nombre, p.tipo, p.precio, p.disponible_hoy, p.es_sopa, p.precio_abierto,
+         (p.tipo = 'ejecutivo' AND p.lleva_sopa) AS incluye_sopa,
          ${DESCUENTO_SIN_SOPA}::int AS descuento_sin_sopa
   FROM productos p`;
 

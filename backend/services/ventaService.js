@@ -92,7 +92,7 @@ const registrarVenta = async (client, userId, { tipo, fecha, items, pago }) => {
         ventaId,
         item.producto_id,
         cantidadVendida,
-        producto.precio,
+        item.precio_unitario ?? producto.precio,
         item.adicion_descripcion || null,
         item.adicion_valor || 0,
       ]

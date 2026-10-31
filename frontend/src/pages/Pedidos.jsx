@@ -11,6 +11,7 @@ import {
 } from '../services/pedidoService';
 import { getMenuHoy } from '../services/menuService';
 import { useDialogos } from '../components/dialogosContexto';
+import InputMoneda from '../components/InputMoneda';
 
 const ESTADOS = {
   pendiente: { texto: 'En cocina', clase: 'bg-pizarra-900/10 text-pizarra-900' },
@@ -38,12 +39,14 @@ const cop = (n) => `${n < 0 ? '−' : ''}$${Math.abs(Number(n)).toLocaleString('
 const textoLinea = (it) =>
   `${it.producto_nombre}` +
   (it.sopa_nombre ? ` (${it.sopa_nombre})` : it.sin_sopa ? ' (sin sopa)' : '') +
-  (it.principio_nombre ? ` + ${it.principio_nombre}` : it.sin_principio ? ' (sin principio)' : '');
+  (it.principio_nombre ? ` + ${it.principio_nombre}` : it.sin_principio ? ' (sin principio)' : '') +
+  (it.precio_abierto ? ` · ${cop(it.precio)}` : '');
 
 export default function Pedidos() {
   const [menu, setMenu] = useState([]);
   const [carrito, setCarrito] = useState({}); // productos normales: { id: { producto, cantidad, nota } }
   const [platos, setPlatos] = useState([]); // platos con sopa: una línea por plato
+  const [abiertos, setAbiertos] = useState([]); // productos de precio abierto: una línea por unidad, con su valor
   const [mesa, setMesa] = useState('');
   const [notas, setNotas] = useState('');
   const [tipoActivo, setTipoActivo] = useState('');
@@ -105,7 +108,11 @@ export default function Pedidos() {
   // Existencias: "disponibles" es null cuando no se sabe cuántas quedan (producto sin receta)
   const llevaExistencias = (p) => p.disponibles !== null && p.disponibles !== undefined;
   const enElPedido = (p) =>
-    p.incluye_sopa ? platos.filter((l) => l.producto.id === p.id).length : carrito[p.id]?.cantidad || 0;
+    p.incluye_sopa
+      ? platos.filter((l) => l.producto.id === p.id).length
+      : p.precio_abierto
+        ? abiertos.filter((l) => l.producto.id === p.id).length
+        : carrito[p.id]?.cantidad || 0;
   const sinExistencias = (p) => llevaExistencias(p) && enElPedido(p) >= p.disponibles;
   const usosSopa = (id) => platos.filter((l) => l.sopa === id).length;
   const usosPrincipio = (id) => platos.filter((l) => l.principio === id).length;
@@ -115,7 +122,9 @@ export default function Pedidos() {
   const visibles = menu.filter((p) => p.tipo === tipoActivo);
 
   const normales = Object.values(carrito);
-  const totalItems = normales.reduce((s, i) => s + i.cantidad, 0) + platos.length;
+  const totalItems = normales.reduce((s, i) => s + i.cantidad, 0) + platos.length + abiertos.length;
+  const valorAbierto = (l) => Number(l.precio) || 0;
+  const abiertoBajo = abiertos.some((l) => valorAbierto(l) < Number(l.producto.precio));
   const faltaSopa = platos.some((l) => !l.sopa);
   const faltaPrincipio = principios.length > 0 && platos.some((l) => !l.principio);
   const totalPrecio =
@@ -124,7 +133,8 @@ export default function Pedidos() {
       (s, l) =>
         s + Number(l.producto.precio) - (l.sopa === 'sin' ? DESCUENTO_SIN_SOPA : 0),
       0
-    );
+    ) +
+    abiertos.reduce((s, l) => s + valorAbierto(l), 0);
 
   const cambiar = (producto, delta) =>
     setCarrito((prev) => {
@@ -143,6 +153,15 @@ export default function Pedidos() {
     setPlatos((prev) => [...prev, { key: keyRef.current++, producto, sopa: null, principio: null, nota: '' }]);
 
   const quitarPlato = (key) => setPlatos((prev) => prev.filter((l) => l.key !== key));
+
+  // Producto de precio abierto: empieza en el mínimo y el mesero escribe cuánto cobrar
+  const agregarAbierto = (producto) =>
+    setAbiertos((prev) => [...prev, { key: keyRef.current++, producto, precio: String(Math.round(Number(producto.precio))), nota: '' }]);
+
+  const quitarAbierto = (key) => setAbiertos((prev) => prev.filter((l) => l.key !== key));
+
+  const cambiarAbierto = (key, cambios) =>
+    setAbiertos((prev) => prev.map((l) => (l.key === key ? { ...l, ...cambios } : l)));
 
   const cambiarPlato = (key, cambios) =>
     setPlatos((prev) => prev.map((l) => (l.key === key ? { ...l, ...cambios } : l)));
@@ -168,12 +187,19 @@ export default function Pedidos() {
     if (totalItems === 0) return setError('Agrega al menos un producto');
     if (faltaSopa) return setError('Escoge la sopa de cada plato, o marca “sin sopa”');
     if (faltaPrincipio) return setError('Escoge el principio de cada plato, o marca “sin principio”');
+    if (abiertoBajo) return setError('El valor de un producto no puede ser menor a su mínimo');
 
     const items = [
       ...normales.map((i) => ({
         producto_id: i.producto.id,
         cantidad: i.cantidad,
         nota: i.nota?.trim() || null,
+      })),
+      ...abiertos.map((l) => ({
+        producto_id: l.producto.id,
+        cantidad: 1,
+        precio: valorAbierto(l),
+        nota: l.nota?.trim() || null,
       })),
       ...platos.map((l) => ({
         producto_id: l.producto.id,
@@ -200,6 +226,7 @@ export default function Pedidos() {
       }
       setCarrito({});
       setPlatos([]);
+      setAbiertos([]);
       setMesa('');
       setNotas('');
       cargarActivos();
@@ -299,10 +326,12 @@ export default function Pedidos() {
         ? 'Falta escoger la sopa'
         : faltaPrincipio
           ? 'Falta escoger el principio'
-          : agregandoA
+          : abiertoBajo
+            ? 'Un valor está por debajo del mínimo'
+            : agregandoA
             ? `Agregar al pedido de la mesa ${agregandoA.mesa} (${totalItems})`
             : `Enviar a cocina (${totalItems})`;
-  const bloqueado = enviando || totalItems === 0 || faltaSopa || faltaPrincipio;
+  const bloqueado = enviando || totalItems === 0 || faltaSopa || faltaPrincipio || abiertoBajo;
 
   return (
     <div className="max-w-xl mx-auto space-y-4 pb-44 md:pb-0">
@@ -370,7 +399,7 @@ export default function Pedidos() {
                 {/* Productos del pedido: se pueden corregir mientras no se cobre */}
                 <ul className="space-y-2">
                   {p.items.map((it) => {
-                    const cantidadFija = it.tipo === 'ejecutivo';
+                    const cantidadFija = it.incluye_sopa || it.precio_abierto;
                     const editNota = editandoNota?.it.detalle_id === it.detalle_id;
                     return (
                       <li key={it.detalle_id} className="text-sm">
@@ -568,6 +597,22 @@ export default function Pedidos() {
                 </button>
               </li>
             ))}
+            {abiertos.map((l) => (
+              <li key={l.key} className="flex items-center gap-2 text-sm">
+                <span className="font-semibold w-7 shrink-0 text-center">1×</span>
+                <span className={`flex-1 min-w-0 ${valorAbierto(l) < Number(l.producto.precio) ? 'text-terracota-600' : ''}`}>
+                  {l.producto.nombre}
+                </span>
+                <span className="font-medium shrink-0">{cop(valorAbierto(l))}</span>
+                <button
+                  onClick={() => quitarAbierto(l.key)}
+                  aria-label={`Quitar ${l.producto.nombre} del pedido`}
+                  className="w-8 h-8 flex items-center justify-center text-terracota-600 shrink-0"
+                >
+                  <X size={16} />
+                </button>
+              </li>
+            ))}
             {platos.map((l) => {
               const sopa = l.sopa === 'sin' ? 'sin sopa' : sopas.find((s) => s.id === l.sopa)?.nombre;
               const principio =
@@ -636,7 +681,7 @@ export default function Pedidos() {
                 <div className="min-w-0">
                   <p className="font-medium truncate">{p.nombre}</p>
                   <p className="text-sm text-pizarra-900/70">
-                    {cop(p.precio)}
+                    {p.precio_abierto ? `desde ${cop(p.precio)} · tú pones el valor` : cop(p.precio)}
                     {p.incluye_sopa && ' · incluye sopa y principio'}
                     {p.tipo === 'sopa' && ' · sopa sola'}
                   </p>
@@ -659,7 +704,19 @@ export default function Pedidos() {
                   )}
                 </div>
                 <div className="flex items-center gap-3">
-                  {p.incluye_sopa ? (
+                  {p.precio_abierto ? (
+                    <>
+                      {enElPedido(p) > 0 && <span className="font-semibold">×{enElPedido(p)}</span>}
+                      <button
+                        onClick={() => agregarAbierto(p)}
+                        disabled={sinExistencias(p)}
+                        aria-label={`Agregar ${p.nombre}`}
+                        className="w-11 h-11 rounded-full bg-mostaza-500 hover:bg-mostaza-600 text-pizarra-950 flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Plus size={18} />
+                      </button>
+                    </>
+                  ) : p.incluye_sopa ? (
                     <>
                       {cuantos > 0 && <span className="font-semibold">×{cuantos}</span>}
                       <button
@@ -713,6 +770,56 @@ export default function Pedidos() {
           );
         })}
       </div>
+
+      {/* Productos de precio abierto: cada uno lleva su valor */}
+      {abiertos.length > 0 && (
+        <div className="space-y-2 pt-2">
+          <p className="text-sm font-medium text-pizarra-900/70">Productos con valor propio</p>
+          {abiertos.map((l) => {
+            const bajo = valorAbierto(l) < Number(l.producto.precio);
+            return (
+              <div key={l.key} className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium">{l.producto.nombre}</p>
+                  <button
+                    onClick={() => quitarAbierto(l.key)}
+                    aria-label={`Quitar ${l.producto.nombre}`}
+                    className="w-9 h-9 rounded-full border border-pizarra-900/25 flex items-center justify-center"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-pizarra-900/70">
+                    ¿Cuánto se cobra? (mínimo {cop(l.producto.precio)})
+                  </label>
+                  <InputMoneda
+                    value={l.precio}
+                    onChange={(valor) => cambiarAbierto(l.key, { precio: valor })}
+                    placeholder="Valor"
+                    className={`w-full mt-1 rounded-lg border bg-white px-3 py-3 text-lg ${
+                      bajo ? 'border-terracota-600' : 'border-pizarra-900/20'
+                    }`}
+                  />
+                  {bajo && (
+                    <p className="text-xs text-terracota-600 mt-1">No puede ser menor a {cop(l.producto.precio)}.</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <MessageSquare size={16} className="text-pizarra-900/50 shrink-0" />
+                  <input
+                    value={l.nota}
+                    onChange={(e) => cambiarAbierto(l.key, { nota: e.target.value })}
+                    aria-label={`Nota para ${l.producto.nombre}`}
+                    placeholder="Nota (sin cebolla, bien asado…)"
+                    className="w-full text-sm rounded-lg border border-pizarra-900/15 bg-white px-3 py-2"
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Platos con sopa: una línea por plato */}
       {platos.length > 0 && (

@@ -32,6 +32,8 @@ function Productos() {
   const [tipo, setTipo] = useState('especial');
   const [precio, setPrecio] = useState('');
   const [insumoLigado, setInsumoLigado] = useState('');
+  const [precioAbierto, setPrecioAbierto] = useState(false); // el precio es el mínimo y el mesero escribe cuánto cobrar
+  const [llevaSopa, setLlevaSopa] = useState(true); // solo ejecutivos: false = sin sopa ni principio
 
   const [productoParaReceta, setProductoParaReceta] = useState(null);
   const [recetaItems, setRecetaItems] = useState([{ insumo_id: '', cantidad_usada: '' }]);
@@ -41,6 +43,8 @@ function Productos() {
   const [editNombre, setEditNombre] = useState('');
   const [editPrecio, setEditPrecio] = useState('');
   const [editInsumo, setEditInsumo] = useState(''); // insumo que descuenta una bebida ('' = ninguno)
+  const [editPrecioAbierto, setEditPrecioAbierto] = useState(false);
+  const [editLlevaSopa, setEditLlevaSopa] = useState(true);
   const [editError, setEditError] = useState('');
 
   const [busqueda, setBusqueda] = useState('');
@@ -73,12 +77,16 @@ function Productos() {
         tipo,
         precio: parseFloat(precio),
         insumo_id: esBebida && insumoLigado ? insumoLigado : null,
+        precio_abierto: precioAbierto,
+        ...(tipo === 'ejecutivo' ? { lleva_sopa: llevaSopa } : {}),
       });
       setProductos((prev) => [...prev, { ...nuevo, receta: [] }]);
       setNombre('');
       setTipo('especial');
       setPrecio('');
       setInsumoLigado('');
+      setPrecioAbierto(false);
+      setLlevaSopa(true);
     } catch (err) {
       setError(err.response?.data?.error || 'Error al crear el producto');
     }
@@ -148,6 +156,8 @@ function Productos() {
     setEditNombre(producto.nombre);
     setEditPrecio(Math.round(parseFloat(producto.precio)).toString());
     setEditInsumo(producto.insumo_id ? String(producto.insumo_id) : '');
+    setEditPrecioAbierto(Boolean(producto.precio_abierto));
+    setEditLlevaSopa(producto.lleva_sopa !== false);
     setEditError('');
   };
 
@@ -159,6 +169,8 @@ function Productos() {
       const actualizado = await updateProducto(productoParaEditar.id, {
         nombre: editNombre,
         precio: parseFloat(editPrecio),
+        precio_abierto: editPrecioAbierto,
+        ...(productoParaEditar.tipo === 'ejecutivo' ? { lleva_sopa: editLlevaSopa } : {}),
         // Solo las bebidas se ligan a un insumo; "ninguno" la deja sin descontar inventario
         ...(productoParaEditar.tipo === 'bebida' ? { insumo_id: editInsumo || null } : {}),
       });
@@ -253,6 +265,38 @@ function Productos() {
             />
           </div>
 
+          <label className="flex items-start gap-2 text-sm text-pizarra-800 min-h-[44px]">
+            <input
+              type="checkbox"
+              checked={precioAbierto}
+              onChange={(e) => setPrecioAbierto(e.target.checked)}
+              className="mt-1"
+            />
+            <span>
+              Precio abierto
+              <span className="block text-xs text-pizarra-700/70">
+                El precio de arriba es el mínimo; al pedirlo se escribe cuánto cobrar.
+              </span>
+            </span>
+          </label>
+
+          {tipo === 'ejecutivo' && (
+            <label className="flex items-start gap-2 text-sm text-pizarra-800 min-h-[44px]">
+              <input
+                type="checkbox"
+                checked={llevaSopa}
+                onChange={(e) => setLlevaSopa(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                Lleva sopa y principio
+                <span className="block text-xs text-pizarra-700/70">
+                  Desmárcalo en los ejecutivos que no los llevan (ej: frijolada).
+                </span>
+              </span>
+            </label>
+          )}
+
           {error && (
             <p className="text-terracota-600 text-sm bg-terracota-500/10 rounded-lg px-3 py-2">
               {error}
@@ -309,6 +353,10 @@ function Productos() {
                       <p className="font-medium text-pizarra-900 text-sm">{producto.nombre}</p>
                       <p className="text-xs text-pizarra-700 capitalize">
                         {producto.tipo} · ${parseFloat(producto.precio).toLocaleString()}
+                        {producto.precio_abierto && <span className="text-mostaza-600"> · precio abierto (mínimo)</span>}
+                        {producto.tipo === 'ejecutivo' && producto.lleva_sopa === false && (
+                          <span className="text-mostaza-600"> · sin sopa ni principio</span>
+                        )}
                         {producto.tipo === 'bebida' && (
                           <span className={producto.insumo_id ? '' : 'text-mostaza-600'}>
                             {' · '}
@@ -490,6 +538,38 @@ function Productos() {
                   className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
                 />
               </div>
+
+              <label className="flex items-start gap-2 text-sm text-pizarra-800 min-h-[44px]">
+                <input
+                  type="checkbox"
+                  checked={editPrecioAbierto}
+                  onChange={(e) => setEditPrecioAbierto(e.target.checked)}
+                  className="mt-1"
+                />
+                <span>
+                  Precio abierto
+                  <span className="block text-xs text-pizarra-700/70">
+                    El precio de arriba es el mínimo; al pedirlo se escribe cuánto cobrar.
+                  </span>
+                </span>
+              </label>
+
+              {productoParaEditar.tipo === 'ejecutivo' && (
+                <label className="flex items-start gap-2 text-sm text-pizarra-800 min-h-[44px]">
+                  <input
+                    type="checkbox"
+                    checked={editLlevaSopa}
+                    onChange={(e) => setEditLlevaSopa(e.target.checked)}
+                    className="mt-1"
+                  />
+                  <span>
+                    Lleva sopa y principio
+                    <span className="block text-xs text-pizarra-700/70">
+                      Desmárcalo en los ejecutivos que no los llevan (ej: frijolada).
+                    </span>
+                  </span>
+                </label>
+              )}
 
               {productoParaEditar.tipo === 'bebida' && (
                 <div>

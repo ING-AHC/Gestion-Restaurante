@@ -52,10 +52,18 @@ const leerItems = (items) => {
       throw new ErrorNegocio(400, 'Principio no válido en el pedido');
     }
 
+    // Valor escogido al pedir un producto de precio abierto (picada, carne a la mamona…)
+    const vacio = item.precio === undefined || item.precio === null || item.precio === '';
+    const precio = vacio ? null : Number(item.precio);
+    if (precio !== null && (!Number.isFinite(precio) || precio <= 0 || precio > 100000000)) {
+      throw new ErrorNegocio(400, 'El valor del producto no es válido');
+    }
+
     const nota = item.nota ? String(item.nota).trim().slice(0, 255) : null;
     return {
       productoId,
       cantidad,
+      precio,
       nota,
       sopaId,
       principioId,
@@ -68,10 +76,10 @@ const leerItems = (items) => {
 // Revisa contra la base que los productos existan, estén activos hoy y cumplan las reglas del ejecutivo.
 // Corrige en la propia línea lo que no aplica (por ejemplo, la sopa de un producto que no es ejecutivo).
 const validarLineas = async (client, userId, lineas) => {
-  // Todo ejecutivo incluye sopa: la regla sale del tipo del producto
+  // Todo ejecutivo incluye sopa y principio, salvo los que se marcaron "sin sopa ni principio" (frijolada)
   const ids = [...new Set(lineas.map((l) => l.productoId))];
   const productos = await client.query(
-    `SELECT id, nombre, disponible_hoy, (tipo = 'ejecutivo') AS incluye_sopa
+    `SELECT id, nombre, precio, precio_abierto, disponible_hoy, (tipo = 'ejecutivo' AND lleva_sopa) AS incluye_sopa
      FROM productos WHERE id = ANY($1::int[]) AND user_id = $2`,
     [ids, userId]
   );
@@ -104,6 +112,22 @@ const validarLineas = async (client, userId, lineas) => {
 
     if (!p.disponible_hoy) {
       throw new ErrorNegocio(409, `"${p.nombre}" no está disponible hoy`);
+    }
+
+    // Precio abierto: el precio del producto es el mínimo y el mesero escribe cuánto cobrar
+    if (p.precio_abierto) {
+      if (l.cantidad !== 1) {
+        throw new ErrorNegocio(400, `"${p.nombre}" se pide de a una, con el valor de cada una`);
+      }
+      if (l.precio === null) l.precio = Number(p.precio);
+      if (l.precio < Number(p.precio)) {
+        throw new ErrorNegocio(
+          400,
+          `El valor de "${p.nombre}" no puede ser menor a $${Number(p.precio).toLocaleString('es-CO')}`
+        );
+      }
+    } else {
+      l.precio = null;
     }
 
     if (p.incluye_sopa) {
@@ -139,9 +163,9 @@ const insertarLineas = async (client, pedidoId, lineas, agregado) => {
   for (const l of lineas) {
     await client.query(
       `INSERT INTO pedido_detalle
-         (pedido_id, producto_id, cantidad, nota, sopa_id, principio_id, sin_sopa, sin_principio, agregado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [pedidoId, l.productoId, l.cantidad, l.nota, l.sopaId, l.principioId, l.sinSopa, l.sinPrincipio, agregado]
+         (pedido_id, producto_id, cantidad, nota, sopa_id, principio_id, sin_sopa, sin_principio, agregado, precio_unitario)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [pedidoId, l.productoId, l.cantidad, l.nota, l.sopaId, l.principioId, l.sinSopa, l.sinPrincipio, agregado, l.precio]
     );
   }
 };
@@ -266,7 +290,9 @@ const getPedidos = async (req, res) => {
                'producto_nombre', pr.nombre,
                'cantidad', d.cantidad,
                'nota', d.nota,
-               'precio', pr.precio,
+               'precio', COALESCE(d.precio_unitario, pr.precio),
+               'precio_abierto', pr.precio_abierto,
+               'incluye_sopa', (pr.tipo = 'ejecutivo' AND pr.lleva_sopa),
                'sopa_nombre', sp.nombre,
                'principio_nombre', pp.nombre,
                'sin_sopa', d.sin_sopa,
@@ -373,7 +399,7 @@ const editarItem = async (req, res) => {
     const pedido = await bloquearPedidoEditable(client, req, id);
 
     const linea = await client.query(
-      `SELECT d.id, d.cantidad, pr.tipo, pr.nombre
+      `SELECT d.id, d.cantidad, pr.tipo, pr.nombre, pr.lleva_sopa, pr.precio_abierto
        FROM pedido_detalle d JOIN productos pr ON pr.id = d.producto_id
        WHERE d.id = $1 AND d.pedido_id = $2`,
       [detalleId, id]
@@ -389,8 +415,11 @@ const editarItem = async (req, res) => {
       if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 100) {
         throw new ErrorNegocio(400, 'La cantidad debe ser un número entero entre 1 y 100');
       }
-      if (actual.tipo === 'ejecutivo' && cantidad !== 1) {
+      if (actual.tipo === 'ejecutivo' && actual.lleva_sopa && cantidad !== 1) {
         throw new ErrorNegocio(400, `"${actual.nombre}" se pide de a uno; agrega otro plato para escoger su sopa`);
+      }
+      if (actual.precio_abierto && cantidad !== 1) {
+        throw new ErrorNegocio(400, `"${actual.nombre}" se pide de a una; agrega otra con su valor`);
       }
     }
 
@@ -543,7 +572,7 @@ const confirmarPedido = async (req, res) => {
     }
 
     const detalle = await client.query(
-      `SELECT d.producto_id, d.cantidad, d.nota, d.sin_sopa, d.sin_principio, d.sopa_id, d.principio_id,
+      `SELECT d.producto_id, d.cantidad, d.precio_unitario, d.nota, d.sin_sopa, d.sin_principio, d.sopa_id, d.principio_id,
               sp.nombre AS sopa_nombre,
               pp.nombre AS principio_nombre
        FROM pedido_detalle d
@@ -569,6 +598,7 @@ const confirmarPedido = async (req, res) => {
       return {
         producto_id: d.producto_id,
         cantidad: d.cantidad,
+        precio_unitario: d.precio_unitario,
         adicion_descripcion: partes.length ? partes.join(' · ').slice(0, 255) : null,
         adicion_valor: d.sin_sopa ? -DESCUENTO_SIN_SOPA : 0,
         // La sopa y el principio escogidos gastan sus propios insumos
