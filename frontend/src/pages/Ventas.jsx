@@ -39,6 +39,14 @@ function Ventas() {
 
   const getProducto = (productoId) => productos.find((p) => p.id === parseInt(productoId));
 
+  // Los ejecutivos y desayunos (salvo los marcados sin sopa) llevan sopa y principio
+  const llevaSopa = (producto) =>
+    producto && ['ejecutivo', 'desayuno'].includes(producto.tipo) && producto.lleva_sopa !== false;
+  const descuentoSinSopa = (producto) =>
+    producto.precio_sin_sopa ? parseFloat(producto.precio) - parseFloat(producto.precio_sin_sopa) : 1000;
+  const sopas = productos.filter((p) => p.tipo === 'sopa');
+  const principios = productos.filter((p) => p.tipo === 'principio');
+
   const updateItem = (index, field, value) => {
     setItems((prev) =>
       prev.map((item, i) => (i === index ? { ...item, [field]: value } : item))
@@ -82,7 +90,9 @@ function Ventas() {
       : parseFloat(producto.precio);
     const subtotalProducto = valorUnitario * (parseInt(item.cantidad) || 0);
     const adicion = parseFloat(item.adicion_valor) || 0;
-    return total + subtotalProducto + adicion;
+    const sinSopa =
+      llevaSopa(producto) && item.sopa === 'sin' ? descuentoSinSopa(producto) * (parseInt(item.cantidad) || 0) : 0;
+    return total + subtotalProducto + adicion - sinSopa;
   }, 0);
 
   const recargarVentas = async () => {
@@ -97,6 +107,10 @@ function Ventas() {
       const pr = !it.servicio && getProducto(it.producto_id);
       return pr && pr.precio_abierto && (parseFloat(it.precio_unitario) || 0) < parseFloat(pr.precio);
     });
+    const sinSopaEscogida = items.find((it) => !it.servicio && llevaSopa(getProducto(it.producto_id)) && !it.sopa);
+    if (sinSopaEscogida) {
+      return setError(`Escoge la sopa de "${getProducto(sinSopaEscogida.producto_id).nombre}" o marca "Sin sopa"`);
+    }
     if (bajo) {
       return setError(`El valor de "${getProducto(bajo.producto_id).nombre}" no puede ser menor a su mínimo`);
     }
@@ -126,6 +140,14 @@ function Ventas() {
                 cantidad: parseInt(item.cantidad),
                 ...(getProducto(item.producto_id)?.precio_abierto
                   ? { precio_unitario: parseFloat(item.precio_unitario) }
+                  : {}),
+                ...(llevaSopa(getProducto(item.producto_id))
+                  ? {
+                      sin_sopa: item.sopa === 'sin',
+                      ...(item.sopa && item.sopa !== 'sin' ? { sopa_id: Number(item.sopa) } : {}),
+                      sin_principio: item.principio === 'sin',
+                      ...(item.principio && item.principio !== 'sin' ? { principio_id: Number(item.principio) } : {}),
+                    }
                   : {}),
                 adicion_descripcion: item.adicion_descripcion || null,
                 adicion_valor: parseFloat(item.adicion_valor) || 0,
@@ -294,6 +316,8 @@ function Ventas() {
                                 ...it,
                                 producto_id: e.target.value,
                                 precio_unitario: String(Math.round(parseFloat(getProducto(e.target.value)?.precio) || 0)),
+                                sopa: '',
+                                principio: '',
                               }
                             : it
                         )
@@ -360,6 +384,36 @@ function Ventas() {
                       required
                       className="w-full mt-1 px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
                     />
+                  </div>
+                )}
+
+                {llevaSopa(getProducto(item.producto_id)) && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={item.sopa || ''}
+                      onChange={(e) => updateItem(index, 'sopa', e.target.value)}
+                      required
+                      className="px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-xs focus:outline-none focus:ring-2 focus:ring-mostaza-500"
+                    >
+                      <option value="">Sopa...</option>
+                      {sopas.map((s) => (
+                        <option key={s.id} value={s.id}>{s.nombre}</option>
+                      ))}
+                      <option value="sin">
+                        Sin sopa (-${descuentoSinSopa(getProducto(item.producto_id)).toLocaleString('es-CO')})
+                      </option>
+                    </select>
+                    <select
+                      value={item.principio || ''}
+                      onChange={(e) => updateItem(index, 'principio', e.target.value)}
+                      className="px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-xs focus:outline-none focus:ring-2 focus:ring-mostaza-500"
+                    >
+                      <option value="">Principio...</option>
+                      {principios.map((pr) => (
+                        <option key={pr.id} value={pr.id}>{pr.nombre}</option>
+                      ))}
+                      <option value="sin">Sin principio</option>
+                    </select>
                   </div>
                 )}
 
