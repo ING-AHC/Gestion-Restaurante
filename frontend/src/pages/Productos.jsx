@@ -37,6 +37,7 @@ function Productos() {
   const [precio, setPrecio] = useState('');
   const [insumoLigado, setInsumoLigado] = useState('');
   const [precioAbierto, setPrecioAbierto] = useState(false); // el precio es el mínimo y el mesero escribe cuánto cobrar
+  const [precioSinSopa, setPrecioSinSopa] = useState(''); // precio del plato pedido sin sopa ('' = descuento fijo)
   const [llevaSopa, setLlevaSopa] = useState(true); // solo ejecutivos y desayunos: false = sin sopa ni principio
 
   const [productoParaReceta, setProductoParaReceta] = useState(null);
@@ -49,6 +50,7 @@ function Productos() {
   const [editInsumo, setEditInsumo] = useState(''); // insumo que descuenta una bebida ('' = ninguno)
   const [editPrecioAbierto, setEditPrecioAbierto] = useState(false);
   const [editLlevaSopa, setEditLlevaSopa] = useState(true);
+  const [editPrecioSinSopa, setEditPrecioSinSopa] = useState('');
   const [editError, setEditError] = useState('');
 
   const [busqueda, setBusqueda] = useState('');
@@ -82,7 +84,9 @@ function Productos() {
         precio: parseFloat(precio),
         insumo_id: esBebida && insumoLigado ? insumoLigado : null,
         precio_abierto: precioAbierto,
-        ...(CON_SOPA.includes(tipo) ? { lleva_sopa: llevaSopa } : {}),
+        ...(CON_SOPA.includes(tipo)
+          ? { lleva_sopa: llevaSopa, precio_sin_sopa: llevaSopa && precioSinSopa ? parseFloat(precioSinSopa) : null }
+          : {}),
       });
       setProductos((prev) => [...prev, { ...nuevo, receta: [] }]);
       setNombre('');
@@ -91,6 +95,7 @@ function Productos() {
       setInsumoLigado('');
       setPrecioAbierto(false);
       setLlevaSopa(true);
+      setPrecioSinSopa('');
     } catch (err) {
       setError(err.response?.data?.error || 'Error al crear el producto');
     }
@@ -162,6 +167,7 @@ function Productos() {
     setEditInsumo(producto.insumo_id ? String(producto.insumo_id) : '');
     setEditPrecioAbierto(Boolean(producto.precio_abierto));
     setEditLlevaSopa(producto.lleva_sopa !== false);
+    setEditPrecioSinSopa(producto.precio_sin_sopa ? String(Math.round(parseFloat(producto.precio_sin_sopa))) : '');
     setEditError('');
   };
 
@@ -174,7 +180,12 @@ function Productos() {
         nombre: editNombre,
         precio: parseFloat(editPrecio),
         precio_abierto: editPrecioAbierto,
-        ...(CON_SOPA.includes(productoParaEditar.tipo) ? { lleva_sopa: editLlevaSopa } : {}),
+        ...(CON_SOPA.includes(productoParaEditar.tipo)
+          ? {
+              lleva_sopa: editLlevaSopa,
+              precio_sin_sopa: editLlevaSopa && editPrecioSinSopa ? parseFloat(editPrecioSinSopa) : null,
+            }
+          : {}),
         // Solo las bebidas se ligan a un insumo; "ninguno" la deja sin descontar inventario
         ...(productoParaEditar.tipo === 'bebida' ? { insumo_id: editInsumo || null } : {}),
       });
@@ -301,6 +312,20 @@ function Productos() {
             </label>
           )}
 
+          {CON_SOPA.includes(tipo) && llevaSopa && (
+            <div>
+              <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
+                Precio sin sopa <span className="font-normal text-pizarra-700/60">(opcional)</span>
+              </label>
+              <InputMoneda
+                value={precioSinSopa}
+                onChange={setPrecioSinSopa}
+                placeholder="Vacío = descuento de $1.000"
+                className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+              />
+            </div>
+          )}
+
           {error && (
             <p className="text-terracota-600 text-sm bg-terracota-500/10 rounded-lg px-3 py-2">
               {error}
@@ -360,6 +385,9 @@ function Productos() {
                         {producto.precio_abierto && <span className="text-mostaza-600"> · precio abierto (mínimo)</span>}
                         {CON_SOPA.includes(producto.tipo) && producto.lleva_sopa === false && (
                           <span className="text-mostaza-600"> · sin sopa ni principio</span>
+                        )}
+                        {CON_SOPA.includes(producto.tipo) && producto.precio_sin_sopa && (
+                          <span> · sin sopa ${parseFloat(producto.precio_sin_sopa).toLocaleString()}</span>
                         )}
                         {producto.tipo === 'bebida' && (
                           <span className={producto.insumo_id ? '' : 'text-mostaza-600'}>
@@ -573,6 +601,20 @@ function Productos() {
                     </span>
                   </span>
                 </label>
+              )}
+
+              {CON_SOPA.includes(productoParaEditar.tipo) && editLlevaSopa && (
+                <div>
+                  <label className="block text-sm font-semibold text-pizarra-800 mb-1.5">
+                    Precio sin sopa <span className="font-normal text-pizarra-700/60">(opcional)</span>
+                  </label>
+                  <InputMoneda
+                    value={editPrecioSinSopa}
+                    onChange={setEditPrecioSinSopa}
+                    placeholder="Vacío = descuento de $1.000"
+                    className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
+                  />
+                </div>
               )}
 
               {productoParaEditar.tipo === 'bebida' && (

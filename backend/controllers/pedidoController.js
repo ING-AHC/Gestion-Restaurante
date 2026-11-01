@@ -298,7 +298,7 @@ const getPedidos = async (req, res) => {
                'sin_sopa', d.sin_sopa,
                'sin_principio', d.sin_principio,
                'agregado', d.agregado,
-               'ajuste', CASE WHEN d.sin_sopa THEN -${DESCUENTO_SIN_SOPA} ELSE 0 END
+               'ajuste', CASE WHEN d.sin_sopa THEN -COALESCE(pr.precio - pr.precio_sin_sopa, ${DESCUENTO_SIN_SOPA}) ELSE 0 END
              ) ORDER BY d.id
            ) FILTER (WHERE d.id IS NOT NULL),
            '[]'
@@ -572,7 +572,7 @@ const confirmarPedido = async (req, res) => {
     }
 
     const detalle = await client.query(
-      `SELECT d.producto_id, d.cantidad, d.precio_unitario, d.nota, d.sin_sopa, d.sin_principio, d.sopa_id, d.principio_id,
+      `SELECT d.producto_id, d.cantidad, d.precio_unitario, d.nota, pr.precio, pr.precio_sin_sopa, d.sin_sopa, d.sin_principio, d.sopa_id, d.principio_id,
               sp.nombre AS sopa_nombre,
               pp.nombre AS principio_nombre
        FROM pedido_detalle d
@@ -601,7 +601,9 @@ const confirmarPedido = async (req, res) => {
         precio_unitario: d.precio_unitario,
         precio_de_pedido: true,
         adicion_descripcion: partes.length ? partes.join(' · ').slice(0, 255) : null,
-        adicion_valor: d.sin_sopa ? -DESCUENTO_SIN_SOPA : 0,
+        adicion_valor: d.sin_sopa
+          ? -(d.precio_sin_sopa !== null ? Number(d.precio) - Number(d.precio_sin_sopa) : DESCUENTO_SIN_SOPA)
+          : 0,
         // La sopa y el principio escogidos gastan sus propios insumos
         consumos_extra: [d.sopa_id, d.principio_id].filter(Boolean),
       };

@@ -16,6 +16,8 @@ const existeNombre = async (userId, nombre, exceptoId = null) => {
 
 const createProducto = async (req, res) => {
   const { tipo, precio, insumo_id } = req.body;
+  const conSopa = ['ejecutivo', 'desayuno'].includes(tipo);
+  const precioSinSopa = conSopa && req.body.precio_sin_sopa ? Number(req.body.precio_sin_sopa) : null;
   const nombre = String(req.body.nombre ?? '').trim();
   const userId = req.userId;
 
@@ -34,6 +36,10 @@ const createProducto = async (req, res) => {
 
     if (!TIPOS_VALIDOS.includes(tipo)) {
       return res.status(400).json({ error: 'El tipo debe ser: especial, rapida, ejecutivo, desayuno, sopa, principio o bebida' });
+    }
+
+    if (precioSinSopa !== null && (!Number.isFinite(precioSinSopa) || precioSinSopa <= 0 || precioSinSopa >= Number(precio))) {
+      return res.status(400).json({ error: 'El precio sin sopa debe ser menor al precio normal' });
     }
 
     // En las bebidas el insumo es opcional: si no se envía, no descuenta inventario
@@ -55,8 +61,8 @@ const createProducto = async (req, res) => {
     }
 
     const newProducto = await pool.query(
-      `INSERT INTO productos (nombre, tipo, precio, insumo_id, es_sopa, user_id, precio_abierto, lleva_sopa)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO productos (nombre, tipo, precio, insumo_id, es_sopa, user_id, precio_abierto, lleva_sopa, precio_sin_sopa)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         nombre,
@@ -68,6 +74,7 @@ const createProducto = async (req, res) => {
         req.body.precio_abierto === true,
         // Solo los ejecutivos y desayunos pueden ir sin sopa ni principio
         ['ejecutivo', 'desayuno'].includes(tipo) ? req.body.lleva_sopa !== false : true,
+        precioSinSopa,
       ]
     );
 
@@ -120,6 +127,8 @@ const updateProducto = async (req, res) => {
   const cambiaInsumo = Object.prototype.hasOwnProperty.call(req.body, 'insumo_id');
   const precioAbierto = typeof req.body.precio_abierto === 'boolean' ? req.body.precio_abierto : null;
   const llevaSopa = typeof req.body.lleva_sopa === 'boolean' ? req.body.lleva_sopa : null;
+  const cambiaSinSopa = Object.prototype.hasOwnProperty.call(req.body, 'precio_sin_sopa');
+  const precioSinSopa = cambiaSinSopa && req.body.precio_sin_sopa ? Number(req.body.precio_sin_sopa) : null;
   const nombre = req.body.nombre === undefined || req.body.nombre === null ? null : String(req.body.nombre).trim();
   const userId = req.userId;
 
@@ -134,6 +143,18 @@ const updateProducto = async (req, res) => {
   try {
     if (nombre !== null && (await existeNombre(userId, nombre, Number(id)))) {
       return res.status(409).json({ error: mensajeRepetido(nombre) });
+    }
+
+    // El precio sin sopa tiene que ser menor al precio normal del producto
+    if (precioSinSopa !== null) {
+      const actual = await pool.query('SELECT precio FROM productos WHERE id = $1 AND user_id = $2', [id, userId]);
+      if (actual.rows.length === 0) {
+        return res.status(404).json({ error: 'Producto no encontrado' });
+      }
+      const precioFinal = precio !== undefined && precio !== null ? Number(precio) : Number(actual.rows[0].precio);
+      if (!Number.isFinite(precioSinSopa) || precioSinSopa <= 0 || precioSinSopa >= precioFinal) {
+        return res.status(400).json({ error: 'El precio sin sopa debe ser menor al precio normal' });
+      }
     }
 
     // El insumo que descuenta una bebida se puede ligar, cambiar o quitar (null) al editar
@@ -163,10 +184,11 @@ const updateProducto = async (req, res) => {
            precio = COALESCE($2, precio),
            insumo_id = CASE WHEN $5::boolean THEN $6::int ELSE insumo_id END,
            precio_abierto = COALESCE($7::boolean, precio_abierto),
-           lleva_sopa = CASE WHEN tipo IN ('ejecutivo', 'desayuno') THEN COALESCE($8::boolean, lleva_sopa) ELSE lleva_sopa END
+           lleva_sopa = CASE WHEN tipo IN ('ejecutivo', 'desayuno') THEN COALESCE($8::boolean, lleva_sopa) ELSE lleva_sopa END,
+           precio_sin_sopa = CASE WHEN $9::boolean AND tipo IN ('ejecutivo', 'desayuno') THEN $10::numeric ELSE precio_sin_sopa END
        WHERE id = $3 AND user_id = $4
        RETURNING *`,
-      [nombre, precio, id, userId, cambiaInsumo, insumoNuevo, precioAbierto, llevaSopa]
+      [nombre, precio, id, userId, cambiaInsumo, insumoNuevo, precioAbierto, llevaSopa, cambiaSinSopa, precioSinSopa]
     );
 
     if (updated.rows.length === 0) {

@@ -21,6 +21,8 @@ const ESTADOS = {
 
 // Descuento fijo por no llevar sopa (el mismo que aplica el servidor)
 const DESCUENTO_SIN_SOPA = 1000;
+// Cada producto puede tener su propio precio sin sopa; si no, el descuento fijo
+const descuentoSinSopa = (producto) => Number(producto.descuento_sin_sopa ?? DESCUENTO_SIN_SOPA);
 
 // Orden en que el mesero ve los tipos de producto
 const ORDEN_TIPOS = ['desayuno', 'ejecutivo', 'especial', 'bebida', 'rapida', 'sopa'];
@@ -132,7 +134,7 @@ export default function Pedidos() {
     normales.reduce((s, i) => s + i.cantidad * Number(i.producto.precio), 0) +
     platos.reduce(
       (s, l) =>
-        s + Number(l.producto.precio) - (l.sopa === 'sin' ? DESCUENTO_SIN_SOPA : 0),
+        s + Number(l.producto.precio) - (l.sopa === 'sin' ? descuentoSinSopa(l.producto) : 0),
       0
     ) +
     abiertos.reduce((s, l) => s + valorAbierto(l), 0);
@@ -632,7 +634,7 @@ export default function Pedidos() {
                     </span>
                   </span>
                   <span className="font-medium shrink-0">
-                    {cop(Number(l.producto.precio) - (l.sopa === 'sin' ? DESCUENTO_SIN_SOPA : 0))}
+                    {cop(Number(l.producto.precio) - (l.sopa === 'sin' ? descuentoSinSopa(l.producto) : 0))}
                   </span>
                   <button
                     onClick={() => quitarPlato(l.key)}
@@ -828,7 +830,7 @@ export default function Pedidos() {
           <p className="text-sm font-medium text-pizarra-900/70">Platos con sopa y principio</p>
           {platos.map((l) => {
             const sin = l.sopa === 'sin';
-            const precio = Number(l.producto.precio) - (sin ? DESCUENTO_SIN_SOPA : 0);
+            const precio = Number(l.producto.precio) - (sin ? descuentoSinSopa(l.producto) : 0);
             return (
               <div key={l.key} className="bg-papel-card rounded-2xl shadow-sm border border-pizarra-900/10 p-4 space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -877,7 +879,7 @@ export default function Pedidos() {
                         sin ? 'bg-pizarra-900 text-white font-semibold' : 'bg-white border border-pizarra-900/20'
                       }`}
                     >
-                      Sin sopa ({cop(-DESCUENTO_SIN_SOPA)})
+                      Sin sopa ({cop(-descuentoSinSopa(l.producto))})
                     </button>
                   </div>
                   {sopas.length === 0 && (
