@@ -113,9 +113,9 @@ export default function MenuDia() {
 
       {/* Regla general de la sopa en los ejecutivos */}
       <div className="bg-papel-card rounded-2xl border border-pizarra-900/10 p-4 space-y-1">
-        <p className="font-semibold">Sopa en los ejecutivos</p>
+        <p className="font-semibold">Sopa en los ejecutivos y desayunos</p>
         <p className="text-sm text-pizarra-900/70">
-          Todos los ejecutivos incluyen sopa y principio. El mesero escoge entre las sopas y
+          Los ejecutivos y desayunos incluyen sopa y principio, salvo los marcados sin ellos (frijolada, calentado). El mesero escoge entre las sopas y
           principios activos hoy. Si el cliente no lleva sopa, se descuentan $1.000.
         </p>
       </div>

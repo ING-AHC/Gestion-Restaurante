@@ -76,10 +76,10 @@ const leerItems = (items) => {
 // Revisa contra la base que los productos existan, estén activos hoy y cumplan las reglas del ejecutivo.
 // Corrige en la propia línea lo que no aplica (por ejemplo, la sopa de un producto que no es ejecutivo).
 const validarLineas = async (client, userId, lineas) => {
-  // Todo ejecutivo incluye sopa y principio, salvo los que se marcaron "sin sopa ni principio" (frijolada)
+  // Todo ejecutivo y desayuno incluye sopa y principio, salvo los marcados "sin sopa ni principio" (frijolada, calentado)
   const ids = [...new Set(lineas.map((l) => l.productoId))];
   const productos = await client.query(
-    `SELECT id, nombre, precio, precio_abierto, disponible_hoy, (tipo = 'ejecutivo' AND lleva_sopa) AS incluye_sopa
+    `SELECT id, nombre, precio, precio_abierto, disponible_hoy, (tipo IN ('ejecutivo', 'desayuno') AND lleva_sopa) AS incluye_sopa
      FROM productos WHERE id = ANY($1::int[]) AND user_id = $2`,
     [ids, userId]
   );
@@ -292,7 +292,7 @@ const getPedidos = async (req, res) => {
                'nota', d.nota,
                'precio', COALESCE(d.precio_unitario, pr.precio),
                'precio_abierto', pr.precio_abierto,
-               'incluye_sopa', (pr.tipo = 'ejecutivo' AND pr.lleva_sopa),
+               'incluye_sopa', (pr.tipo IN ('ejecutivo', 'desayuno') AND pr.lleva_sopa),
                'sopa_nombre', sp.nombre,
                'principio_nombre', pp.nombre,
                'sin_sopa', d.sin_sopa,
@@ -415,7 +415,7 @@ const editarItem = async (req, res) => {
       if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 100) {
         throw new ErrorNegocio(400, 'La cantidad debe ser un número entero entre 1 y 100');
       }
-      if (actual.tipo === 'ejecutivo' && actual.lleva_sopa && cantidad !== 1) {
+      if (['ejecutivo', 'desayuno'].includes(actual.tipo) && actual.lleva_sopa && cantidad !== 1) {
         throw new ErrorNegocio(400, `"${actual.nombre}" se pide de a uno; agrega otro plato para escoger su sopa`);
       }
       if (actual.precio_abierto && cantidad !== 1) {

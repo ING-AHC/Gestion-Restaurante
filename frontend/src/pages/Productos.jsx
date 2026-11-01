@@ -22,6 +22,9 @@ const TIPOS = [
   { value: 'bebida', label: 'Bebida' },
 ];
 
+// Tipos que preguntan sopa y principio al pedirlos
+const CON_SOPA = ['ejecutivo', 'desayuno'];
+
 function Productos() {
   const { confirmar, avisar } = useDialogos();
   const [productos, setProductos] = useState([]);
@@ -34,7 +37,7 @@ function Productos() {
   const [precio, setPrecio] = useState('');
   const [insumoLigado, setInsumoLigado] = useState('');
   const [precioAbierto, setPrecioAbierto] = useState(false); // el precio es el mínimo y el mesero escribe cuánto cobrar
-  const [llevaSopa, setLlevaSopa] = useState(true); // solo ejecutivos: false = sin sopa ni principio
+  const [llevaSopa, setLlevaSopa] = useState(true); // solo ejecutivos y desayunos: false = sin sopa ni principio
 
   const [productoParaReceta, setProductoParaReceta] = useState(null);
   const [recetaItems, setRecetaItems] = useState([{ insumo_id: '', cantidad_usada: '' }]);
@@ -79,7 +82,7 @@ function Productos() {
         precio: parseFloat(precio),
         insumo_id: esBebida && insumoLigado ? insumoLigado : null,
         precio_abierto: precioAbierto,
-        ...(tipo === 'ejecutivo' ? { lleva_sopa: llevaSopa } : {}),
+        ...(CON_SOPA.includes(tipo) ? { lleva_sopa: llevaSopa } : {}),
       });
       setProductos((prev) => [...prev, { ...nuevo, receta: [] }]);
       setNombre('');
@@ -171,7 +174,7 @@ function Productos() {
         nombre: editNombre,
         precio: parseFloat(editPrecio),
         precio_abierto: editPrecioAbierto,
-        ...(productoParaEditar.tipo === 'ejecutivo' ? { lleva_sopa: editLlevaSopa } : {}),
+        ...(CON_SOPA.includes(productoParaEditar.tipo) ? { lleva_sopa: editLlevaSopa } : {}),
         // Solo las bebidas se ligan a un insumo; "ninguno" la deja sin descontar inventario
         ...(productoParaEditar.tipo === 'bebida' ? { insumo_id: editInsumo || null } : {}),
       });
@@ -281,7 +284,7 @@ function Productos() {
             </span>
           </label>
 
-          {tipo === 'ejecutivo' && (
+          {CON_SOPA.includes(tipo) && (
             <label className="flex items-start gap-2 text-sm text-pizarra-800 min-h-[44px]">
               <input
                 type="checkbox"
@@ -292,7 +295,7 @@ function Productos() {
               <span>
                 Lleva sopa y principio
                 <span className="block text-xs text-pizarra-700/70">
-                  Desmárcalo en los ejecutivos que no los llevan (ej: frijolada).
+                  Desmárcalo en los que no los llevan (ej: frijolada, calentado).
                 </span>
               </span>
             </label>
@@ -355,7 +358,7 @@ function Productos() {
                       <p className="text-xs text-pizarra-700 capitalize">
                         {producto.tipo} · ${parseFloat(producto.precio).toLocaleString()}
                         {producto.precio_abierto && <span className="text-mostaza-600"> · precio abierto (mínimo)</span>}
-                        {producto.tipo === 'ejecutivo' && producto.lleva_sopa === false && (
+                        {CON_SOPA.includes(producto.tipo) && producto.lleva_sopa === false && (
                           <span className="text-mostaza-600"> · sin sopa ni principio</span>
                         )}
                         {producto.tipo === 'bebida' && (
@@ -555,7 +558,7 @@ function Productos() {
                 </span>
               </label>
 
-              {productoParaEditar.tipo === 'ejecutivo' && (
+              {CON_SOPA.includes(productoParaEditar.tipo) && (
                 <label className="flex items-start gap-2 text-sm text-pizarra-800 min-h-[44px]">
                   <input
                     type="checkbox"
@@ -566,7 +569,7 @@ function Productos() {
                   <span>
                     Lleva sopa y principio
                     <span className="block text-xs text-pizarra-700/70">
-                      Desmárcalo en los ejecutivos que no los llevan (ej: frijolada).
+                      Desmárcalo en los que no los llevan (ej: frijolada, calentado).
                     </span>
                   </span>
                 </label>

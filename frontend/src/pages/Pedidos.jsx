@@ -825,7 +825,7 @@ export default function Pedidos() {
       {/* Platos con sopa: una línea por plato */}
       {platos.length > 0 && (
         <div className="space-y-2 pt-2">
-          <p className="text-sm font-medium text-pizarra-900/70">Ejecutivos del pedido</p>
+          <p className="text-sm font-medium text-pizarra-900/70">Platos con sopa y principio</p>
           {platos.map((l) => {
             const sin = l.sopa === 'sin';
             const precio = Number(l.producto.precio) - (sin ? DESCUENTO_SIN_SOPA : 0);

@@ -66,8 +66,8 @@ const createProducto = async (req, res) => {
         tipo === 'sopa',
         userId,
         req.body.precio_abierto === true,
-        // Solo los ejecutivos pueden ir sin sopa ni principio
-        tipo === 'ejecutivo' ? req.body.lleva_sopa !== false : true,
+        // Solo los ejecutivos y desayunos pueden ir sin sopa ni principio
+        ['ejecutivo', 'desayuno'].includes(tipo) ? req.body.lleva_sopa !== false : true,
       ]
     );
 
@@ -163,7 +163,7 @@ const updateProducto = async (req, res) => {
            precio = COALESCE($2, precio),
            insumo_id = CASE WHEN $5::boolean THEN $6::int ELSE insumo_id END,
            precio_abierto = COALESCE($7::boolean, precio_abierto),
-           lleva_sopa = CASE WHEN tipo = 'ejecutivo' THEN COALESCE($8::boolean, lleva_sopa) ELSE lleva_sopa END
+           lleva_sopa = CASE WHEN tipo IN ('ejecutivo', 'desayuno') THEN COALESCE($8::boolean, lleva_sopa) ELSE lleva_sopa END
        WHERE id = $3 AND user_id = $4
        RETURNING *`,
       [nombre, precio, id, userId, cambiaInsumo, insumoNuevo, precioAbierto, llevaSopa]
