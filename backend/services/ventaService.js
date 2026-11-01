@@ -85,6 +85,24 @@ const registrarVenta = async (client, userId, { tipo, fecha, items, pago }) => {
 
     const producto = productoResult.rows[0];
 
+    // Valor de venta: el del producto, o el que se escribió si es de precio abierto (nunca menos del mínimo).
+    // Lo que viene de un pedido ya validado (precio_de_pedido) se respeta tal cual.
+    let precioUnitario = producto.precio;
+    if (item.precio_unitario !== undefined && item.precio_unitario !== null && item.precio_unitario !== '') {
+      const escrito = Number(item.precio_unitario);
+      if (item.precio_de_pedido) {
+        precioUnitario = escrito;
+      } else if (producto.precio_abierto) {
+        if (!Number.isFinite(escrito) || escrito < Number(producto.precio) || escrito > 100000000) {
+          throw new ErrorNegocio(
+            400,
+            `El valor de "${producto.nombre}" no puede ser menor a $${Number(producto.precio).toLocaleString('es-CO')}`
+          );
+        }
+        precioUnitario = escrito;
+      }
+    }
+
     await client.query(
       `INSERT INTO venta_detalle (venta_id, producto_id, cantidad, precio_unitario, adicion_descripcion, adicion_valor)
        VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -92,7 +110,7 @@ const registrarVenta = async (client, userId, { tipo, fecha, items, pago }) => {
         ventaId,
         item.producto_id,
         cantidadVendida,
-        item.precio_unitario ?? producto.precio,
+        precioUnitario,
         item.adicion_descripcion || null,
         item.adicion_valor || 0,
       ]

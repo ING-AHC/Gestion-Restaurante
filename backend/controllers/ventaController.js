@@ -37,6 +37,7 @@ const createVenta = async (req, res) => {
       lineas.push({
         producto_id: Number(item.producto_id),
         cantidad,
+        precio_unitario: item.precio_unitario,
         adicion_descripcion: item.adicion_descripcion,
         adicion_valor: item.adicion_valor,
       });

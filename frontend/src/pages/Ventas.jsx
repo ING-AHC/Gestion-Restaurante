@@ -77,7 +77,10 @@ function Ventas() {
     }
     const producto = getProducto(item.producto_id);
     if (!producto) return total;
-    const subtotalProducto = parseFloat(producto.precio) * (parseInt(item.cantidad) || 0);
+    const valorUnitario = producto.precio_abierto
+      ? parseFloat(item.precio_unitario) || 0
+      : parseFloat(producto.precio);
+    const subtotalProducto = valorUnitario * (parseInt(item.cantidad) || 0);
     const adicion = parseFloat(item.adicion_valor) || 0;
     return total + subtotalProducto + adicion;
   }, 0);
@@ -90,6 +93,13 @@ function Ventas() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    const bajo = items.find((it) => {
+      const pr = !it.servicio && getProducto(it.producto_id);
+      return pr && pr.precio_abierto && (parseFloat(it.precio_unitario) || 0) < parseFloat(pr.precio);
+    });
+    if (bajo) {
+      return setError(`El valor de "${getProducto(bajo.producto_id).nombre}" no puede ser menor a su mínimo`);
+    }
     if (tipoVenta === 'venta' && !pagoValido(pago.metodo, pago.montoEfectivo, totalVenta)) {
       return setError('En el pago mixto escribe cuánto fue en efectivo (menos que el total)');
     }
@@ -114,6 +124,9 @@ function Ventas() {
             : {
                 producto_id: item.producto_id,
                 cantidad: parseInt(item.cantidad),
+                ...(getProducto(item.producto_id)?.precio_abierto
+                  ? { precio_unitario: parseFloat(item.precio_unitario) }
+                  : {}),
                 adicion_descripcion: item.adicion_descripcion || null,
                 adicion_valor: parseFloat(item.adicion_valor) || 0,
               }
@@ -273,7 +286,19 @@ function Ventas() {
                 <div className="flex gap-2 items-center">
                   <select
                     value={item.producto_id}
-                    onChange={(e) => updateItem(index, 'producto_id', e.target.value)}
+                    onChange={(e) =>
+                      setItems((prev) =>
+                        prev.map((it, i) =>
+                          i === index
+                            ? {
+                                ...it,
+                                producto_id: e.target.value,
+                                precio_unitario: String(Math.round(parseFloat(getProducto(e.target.value)?.precio) || 0)),
+                              }
+                            : it
+                        )
+                      )
+                    }
                     required
                     className="flex-1 px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
                   >
@@ -317,6 +342,21 @@ function Ventas() {
                     </button>
                   )}
                 </div>
+
+                {getProducto(item.producto_id)?.precio_abierto && (
+                  <div>
+                    <label className="text-xs font-semibold text-pizarra-700">
+                      Valor de cada una (mínimo ${parseFloat(getProducto(item.producto_id).precio).toLocaleString('es-CO')})
+                    </label>
+                    <InputMoneda
+                      value={item.precio_unitario}
+                      onChange={(valor) => updateItem(index, 'precio_unitario', valor)}
+                      placeholder="Valor"
+                      required
+                      className="w-full mt-1 px-2 py-1.5 rounded-lg border border-pizarra-900/15 text-sm focus:outline-none focus:ring-2 focus:ring-mostaza-500"
+                    />
+                  </div>
+                )}
 
                 <div className="flex gap-2">
                   <input

@@ -599,6 +599,7 @@ const confirmarPedido = async (req, res) => {
         producto_id: d.producto_id,
         cantidad: d.cantidad,
         precio_unitario: d.precio_unitario,
+        precio_de_pedido: true,
         adicion_descripcion: partes.length ? partes.join(' · ').slice(0, 255) : null,
         adicion_valor: d.sin_sopa ? -DESCUENTO_SIN_SOPA : 0,
         // La sopa y el principio escogidos gastan sus propios insumos
