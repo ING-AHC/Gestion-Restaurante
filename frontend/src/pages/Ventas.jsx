@@ -6,6 +6,7 @@ import { getProductos } from '../services/productoService';
 import InputMoneda from '../components/InputMoneda';
 import SelectorPago from '../components/SelectorPago';
 import { etiquetaPago, pagoValido } from '../utils/pago';
+import { fechaHoyLocal } from '../utils/fecha';
 
 function Ventas() {
   const [ventas, setVentas] = useState([]);
@@ -15,11 +16,11 @@ function Ventas() {
 
   const [tipoVenta, setTipoVenta] = useState('venta');
   const [pago, setPago] = useState({ metodo: 'efectivo', montoEfectivo: '' });
-  const [fechaVenta, setFechaVenta] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaVenta, setFechaVenta] = useState(fechaHoyLocal());
   const [items, setItems] = useState([
     { producto_id: '', cantidad: '1', adicion_descripcion: '', adicion_valor: '' },
   ]);
-  const [fechaFiltro, setFechaFiltro] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaFiltro, setFechaFiltro] = useState(fechaHoyLocal());
 
   useEffect(() => {
     const loadAll = async () => {
@@ -124,7 +125,7 @@ function Ventas() {
 
       setTipoVenta('venta');
       setPago({ metodo: 'efectivo', montoEfectivo: '' });
-      setFechaVenta(new Date().toISOString().split('T')[0]);
+      setFechaVenta(fechaHoyLocal());
       setItems([{ producto_id: '', cantidad: '1', adicion_descripcion: '', adicion_valor: '' }]);
     } catch (err) {
       setError(err.response?.data?.error || 'Error al registrar la venta');
@@ -190,7 +191,7 @@ function Ventas() {
                 type="date"
                 value={fechaVenta}
                 onChange={(e) => setFechaVenta(e.target.value)}
-                max={new Date().toISOString().split('T')[0]}
+                max={fechaHoyLocal()}
                 className="w-full px-3 py-2 rounded-lg border border-pizarra-900/15 focus:outline-none focus:ring-2 focus:ring-mostaza-500 text-sm"
               />
             </div>
@@ -381,7 +382,7 @@ function Ventas() {
               />
               <button
                 type="button"
-                onClick={() => setFechaFiltro(new Date().toISOString().split('T')[0])}
+                onClick={() => setFechaFiltro(fechaHoyLocal())}
                 className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"
               >
                 Hoy
