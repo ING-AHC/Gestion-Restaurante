@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 
-const TIPOS_VALIDOS = ['especial', 'rapida', 'ejecutivo', 'bebida', 'sopa', 'principio'];
+const TIPOS_VALIDOS = ['especial', 'rapida', 'ejecutivo', 'bebida', 'sopa', 'principio', 'desayuno'];
 
 // Dos productos no pueden llamarse igual en un mismo restaurante (sin importar mayúsculas ni espacios)
 const mensajeRepetido = (nombre) => `Ya existe un producto llamado "${nombre}"`;
@@ -33,7 +33,7 @@ const createProducto = async (req, res) => {
     }
 
     if (!TIPOS_VALIDOS.includes(tipo)) {
-      return res.status(400).json({ error: 'El tipo debe ser: especial, rapida, ejecutivo, sopa, principio o bebida' });
+      return res.status(400).json({ error: 'El tipo debe ser: especial, rapida, ejecutivo, desayuno, sopa, principio o bebida' });
     }
 
     // En las bebidas el insumo es opcional: si no se envía, no descuenta inventario

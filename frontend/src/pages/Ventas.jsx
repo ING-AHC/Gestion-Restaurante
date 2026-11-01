@@ -313,6 +313,11 @@ function Ventas() {
                         <option key={p.id} value={p.id}>{p.nombre}</option>
                       ))}
                     </optgroup>
+                    <optgroup label="Desayunos">
+                      {productos.filter((p) => p.tipo === 'desayuno').map((p) => (
+                        <option key={p.id} value={p.id}>{p.nombre}</option>
+                      ))}
+                    </optgroup>
                     <optgroup label="Ejecutivos">
                       {productos.filter((p) => p.tipo === 'ejecutivo').map((p) => (
                         <option key={p.id} value={p.id}>{p.nombre}</option>

@@ -16,6 +16,7 @@ const TIPOS = [
   { value: 'especial', label: 'Especial' },
   { value: 'rapida', label: 'Comida rápida' },
   { value: 'ejecutivo', label: 'Ejecutivo' },
+  { value: 'desayuno', label: 'Desayuno' },
   { value: 'sopa', label: 'Sopa' },
   { value: 'principio', label: 'Principio' },
   { value: 'bebida', label: 'Bebida' },
@@ -375,7 +376,7 @@ function Productos() {
                       >
                         Editar
                       </button>
-                      {(producto.tipo === 'especial' || producto.tipo === 'rapida' || producto.tipo === 'ejecutivo' || producto.tipo === 'sopa' || producto.tipo === 'principio') && (
+                      {(producto.tipo === 'especial' || producto.tipo === 'rapida' || producto.tipo === 'desayuno' || producto.tipo === 'ejecutivo' || producto.tipo === 'sopa' || producto.tipo === 'principio') && (
                         <button
                           onClick={() => abrirModalReceta(producto)}
                           className="text-xs font-semibold text-mostaza-600 hover:text-mostaza-700"

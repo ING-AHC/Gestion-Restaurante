@@ -26,7 +26,7 @@ const leerPago = (body = {}, total = null) => {
   return { metodo, montoEfectivo };
 };
 
-const TIPOS_CON_RECETA = ['especial', 'rapida', 'ejecutivo', 'sopa', 'principio'];
+const TIPOS_CON_RECETA = ['especial', 'rapida', 'ejecutivo', 'sopa', 'principio', 'desayuno'];
 
 // Descuenta del inventario lo que lleva la receta de un producto
 const descontarReceta = async (client, userId, productoId, cantidad) => {

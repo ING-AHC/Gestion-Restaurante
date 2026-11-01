@@ -23,8 +23,9 @@ const ESTADOS = {
 const DESCUENTO_SIN_SOPA = 1000;
 
 // Orden en que el mesero ve los tipos de producto
-const ORDEN_TIPOS = ['ejecutivo', 'especial', 'bebida', 'rapida', 'sopa'];
+const ORDEN_TIPOS = ['desayuno', 'ejecutivo', 'especial', 'bebida', 'rapida', 'sopa'];
 const TITULOS = {
+  desayuno: 'Desayunos',
   ejecutivo: 'Ejecutivos',
   especial: 'Especiales',
   bebida: 'Bebidas',

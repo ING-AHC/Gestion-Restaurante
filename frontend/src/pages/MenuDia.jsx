@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { getMenuAdmin, updateMenuItem, reiniciarMenu } from '../services/menuService';
 
 const TITULOS = {
+  desayuno: 'Desayunos',
   ejecutivo: 'Ejecutivos',
   sopa: 'Sopas',
   principio: 'Principios',
@@ -9,7 +10,7 @@ const TITULOS = {
   rapida: 'Comidas rápidas',
   bebida: 'Bebidas',
 };
-const ORDEN = ['ejecutivo', 'sopa', 'principio', 'especial', 'rapida', 'bebida'];
+const ORDEN = ['desayuno', 'ejecutivo', 'sopa', 'principio', 'especial', 'rapida', 'bebida'];
 
 const titulo = (tipo) => TITULOS[tipo] || tipo.charAt(0).toUpperCase() + tipo.slice(1);
 const cop = (n) => `$${Number(n).toLocaleString('es-CO')}`;
