@@ -74,7 +74,7 @@ const createCompra = async (req, res) => {
 
     const compraResult = await client.query(
       `INSERT INTO compras (proveedor_id, monto_total, estado_pago, fecha, user_id, metodo_pago, monto_efectivo)
-       VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7)
+       VALUES ($1, $2, $3, COALESCE($4, (NOW() AT TIME ZONE 'America/Bogota')::date), $5, $6, $7)
        RETURNING *`,
       [proveedor_id || null, montoTotal, estado_pago || 'pendiente', fecha, userId, metodo, montoEfectivo]
     );

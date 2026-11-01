@@ -9,14 +9,8 @@ import InputMoneda from '../components/InputMoneda';
 import SelectorCategoria from '../components/SelectorCategoria';
 import SelectorPago from '../components/SelectorPago';
 import { etiquetaPago, pagoValido } from '../utils/pago';
+import { fechaHoyLocal as hoy } from '../utils/fecha';
 
-// Fecha de hoy en la zona horaria del equipo (toISOString usa UTC y de noche daría el día siguiente)
-const hoy = () => {
-  const d = new Date();
-  const mes = String(d.getMonth() + 1).padStart(2, '0');
-  const dia = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mes}-${dia}`;
-};
 
 // Pestañas: cada tipo de gasto pide solo los datos que le sirven.
 // "categoria" fija = se guarda siempre en esa categoría (se crea sola la primera vez).
